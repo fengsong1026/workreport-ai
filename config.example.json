@@ -1,0 +1,14 @@
+{
+  "api_key": "sk-your-api-key-here",
+  "api_base": "https://api.deepseek.com",
+  "model": "deepseek-v4-flash",
+  "max_tokens": 4096,
+  "plugins": {
+    "git": {
+      "path": "../git-weekly-automation"
+    },
+    "task": {},
+    "calendar": {},
+    "doc": {}
+  }
+}

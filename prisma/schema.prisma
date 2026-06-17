@@ -1,0 +1,59 @@
+// WorkReport AI Prisma Schema
+// 使用 SQLite 作为数据库
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// 平台配置（单行记录，id 固定为 0）
+model Config {
+  id        Int      @id @default(0)
+  apiKey    String   @default("")
+  apiBase   String   @default("https://api.deepseek.com")
+  model     String   @default("deepseek-v4-flash")
+  maxTokens Int      @default(4096)
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+/// 生成的报告
+model Report {
+  id           String   @id @default(cuid())
+  type         String // "daily" | "weekly" | "monthly"
+  label        String // "W25 (2026)"
+  dateRange    String // "2026-06-15 → 2026-06-17"
+  recordCount  Int
+  projectCount Int
+  content      String
+  createdAt    DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// 数据源连接状态
+model DataSource {
+  id          String   @id @default(cuid())
+  name        String   @unique // "git", "task", ...
+  displayName String
+  status      String // "done" | "planned"
+  connected   Boolean  @default(false)
+  config      String   @default("{}") // JSON
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+/// 定时任务
+model ScheduledTask {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  schedule  String // "Fri 17:00" 人类可读
+  cronExpr  String // "0 17 * * 5" cron 表达式
+  enabled   Boolean  @default(true)
+  command   String // "generate"
+  plugin    String? // null = 所有插件
+  createdAt DateTime @default(now())
+}
