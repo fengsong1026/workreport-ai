@@ -5,7 +5,7 @@
  * 文档：https://docs.github.com/en/rest
  */
 
-import { NextRequest } from "next/server";
+import { getRequestOrigin } from "./oauth";
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_OAUTH_AUTHORIZE = "https://github.com/login/oauth/authorize";
@@ -260,27 +260,6 @@ export async function listCommits(
   }
 
   return commits;
-}
-
-/**
- * 从请求中推导出完整的 origin（协议 + 主机）
- *
- * 支持反向代理（nginx）场景下的 x-forwarded-* headers，
- * 保证获取到的是用户实际访问的地址，而非容器内部地址。
- */
-export function getRequestOrigin(req: NextRequest): string {
-  const forwardedProto = req.headers.get("x-forwarded-proto");
-  const forwardedHost = req.headers.get("x-forwarded-host");
-  const host = req.headers.get("host");
-
-  const finalHost = forwardedHost || host;
-  if (finalHost) {
-    const proto = forwardedProto || (finalHost.startsWith("localhost") ? "http" : "https");
-    return `${proto}://${finalHost}`;
-  }
-
-  // 兜底：从请求 URL 解析
-  return new URL(req.url).origin;
 }
 
 /**

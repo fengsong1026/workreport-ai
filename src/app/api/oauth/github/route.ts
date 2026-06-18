@@ -8,7 +8,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { buildAuthorizeUrl, getGitHubOAuthConfig, getRequestOrigin } from "@/lib/github";
+import { buildAuthorizeUrl, getGitHubOAuthConfig } from "@/lib/github";
+import { getRequestOrigin } from "@/lib/oauth";
 import { randomBytes } from "crypto";
 
 export async function GET(req: NextRequest) {

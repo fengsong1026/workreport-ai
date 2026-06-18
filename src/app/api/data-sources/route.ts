@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRegistry } from "@/lib/registry";
 import { prisma } from "@/lib/prisma";
+import { OAUTH_PROVIDERS } from "@/lib/oauth-providers";
 
 export async function GET() {
   const registry = getRegistry();
@@ -56,7 +57,20 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ plugins: result });
+  // 所有 OAuth provider 的连接状态（不含 github，github 走专用路由在 plugins 里）
+  const providers = Object.values(OAUTH_PROVIDERS).map((cfg) => {
+    const conn = connections.get(cfg.name);
+    return {
+      name: cfg.name,
+      displayName: cfg.displayName,
+      plugin: cfg.plugin,
+      connected: conn?.connected || false,
+      special: cfg.special || false,
+      docsUrl: cfg.docsUrl || null,
+    };
+  });
+
+  return NextResponse.json({ plugins: result, providers });
 }
 
 export async function POST(req: NextRequest) {

@@ -22,8 +22,18 @@ interface DataSource {
   repos?: Repo[];
 }
 
+interface Provider {
+  name: string;
+  displayName: string;
+  plugin: string;
+  connected: boolean;
+  special: boolean;
+  docsUrl: string | null;
+}
+
 export default function DataSourcesPage() {
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,6 +50,7 @@ export default function DataSourcesPage() {
       if (res.ok) {
         const data = await res.json();
         setDataSources(data.plugins || []);
+        setProviders(data.providers || []);
         // 初始化已选仓库
         const git = (data.plugins || []).find(
           (p: DataSource) => p.name === "git",
@@ -66,8 +77,9 @@ export default function DataSourcesPage() {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("connected");
     const error = params.get("error");
-    if (connected === "github") {
-      setMessage({ type: "success", text: "GitHub 连接成功！" });
+    if (connected) {
+      const label = connected === "github" ? "GitHub" : connected;
+      setMessage({ type: "success", text: `${label} 连接成功！` });
     } else if (error) {
       const msg = params.get("msg") || error;
       setMessage({ type: "error", text: `连接失败: ${msg}` });
@@ -142,6 +154,21 @@ export default function DataSourcesPage() {
       });
       loadData();
       setMessage({ type: "info", text: "已断开 GitHub 连接" });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDisconnectProvider = async (provider: Provider) => {
+    if (!confirm(`确定断开 ${provider.displayName} 连接？`)) return;
+    try {
+      await fetch("/api/data-sources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: provider.name, action: "disconnect" }),
+      });
+      loadData();
+      setMessage({ type: "info", text: `已断开 ${provider.displayName} 连接` });
     } catch (e) {
       console.error(e);
     }
@@ -233,10 +260,12 @@ export default function DataSourcesPage() {
         )}
       </section>
 
-      {/* Git (GitHub) 连接管理 */}
+      {/* Git 连接管理（GitHub + GitLab） */}
       <section className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <h2 className="text-xl font-semibold mb-4">Git (GitHub)</h2>
+        <h2 className="text-xl font-semibold mb-4">Git</h2>
 
+        {/* GitHub */}
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">GitHub</h3>
         {!gitPlugin?.connected ? (
           /* 未连接：显示连接按钮 */
           <div className="text-center py-8">
@@ -355,7 +384,147 @@ export default function DataSourcesPage() {
             )}
           </div>
         )}
+
+        {/* GitLab */}
+        {providers
+          .filter((p) => p.name === "gitlab")
+          .map((p) => (
+            <div key={p.name} className="mt-6">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                GitLab
+              </h3>
+              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium">{p.displayName}</span>
+                    {p.connected ? (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                        已连接
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                        未连接
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!p.connected ? (
+                    <a
+                      href={`/api/oauth/${p.name}`}
+                      className="text-sm px-4 py-2 rounded-lg transition-colors bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600"
+                    >
+                      连接 {p.displayName}
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => handleDisconnectProvider(p)}
+                      className="text-sm px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                    >
+                      断开
+                    </button>
+                  )}
+                  {p.docsUrl && (
+                    <a
+                      href={p.docsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      注册 OAuth App →
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
       </section>
+
+      {/* 按插件分组的数据源连接管理，每个 provider 独占一行 */}
+      {[
+        { key: "task", label: "Task Reporter", desc: "Jira / Linear / 飞书任务" },
+        { key: "calendar", label: "Calendar Reporter", desc: "Google Calendar / 企业微信日历" },
+        { key: "doc", label: "Doc Reporter", desc: "Notion / 语雀 / Confluence" },
+      ].map(({ key, label, desc }) => {
+        const group = providers.filter((p) => p.plugin === key);
+        if (group.length === 0) return null;
+        return (
+          <section
+            key={key}
+            className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
+          >
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold">{label}</h2>
+              <p className="text-sm text-gray-500">{desc}</p>
+            </div>
+            <div className="space-y-3">
+              {group.map((p) => (
+                <div
+                  key={p.name}
+                  className="p-4 rounded-lg border border-gray-200 dark:border-gray-800 flex items-center justify-between"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium">{p.displayName}</span>
+                      {p.connected ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                          已连接
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                          未连接
+                        </span>
+                      )}
+                      {p.special && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+                          需额外配置
+                        </span>
+                      )}
+                    </div>
+                    {p.special && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        非标准 OAuth 流程，暂未实现自动连接
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!p.connected ? (
+                      <a
+                        href={`/api/oauth/${p.name}`}
+                        className={`text-sm px-4 py-2 rounded-lg transition-colors ${
+                          p.special
+                            ? "bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-800"
+                            : "bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600"
+                        }`}
+                        onClick={(e) => p.special && e.preventDefault()}
+                      >
+                        连接 {p.displayName}
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => handleDisconnectProvider(p)}
+                        className="text-sm px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                      >
+                        断开
+                      </button>
+                    )}
+                    {p.docsUrl && (
+                      <a
+                        href={p.docsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        注册 OAuth App →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
