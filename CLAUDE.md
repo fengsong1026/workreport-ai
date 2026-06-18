@@ -26,7 +26,7 @@ report generation ──► plugin.read() calls GitHub Commits API ──► Wor
 - **Registry** (`src/lib/registry.ts`): explicitly registers plugin instances (no dynamic import). `getRegistry()` returns a singleton.
 - **AI engine** (`src/lib/ai-engine.ts`): shared. Template fill → prompt build → OpenAI-compatible `/v1/chat/completions` call via `openai` SDK. Config priority: DB > env var > defaults.
 - **Git plugin** (`src/plugins/git.ts`): GitHub OAuth + API. `collect()` syncs repo list via `GET /user/repos`; `read()` fetches commits via `GET /repos/{owner}/{repo}/commits` for selected repos; `formatForPrompt()` groups by repo. Token and repo selection stored in `DataSource.config` (JSON) in SQLite.
-- **GitHub API client** (`src/lib/github.ts`): encapsulates OAuth token exchange, user info, repo listing, commit listing. All calls use `Authorization: Bearer <token>`.
+- **GitHub API client** (`src/lib/github.ts`): encapsulates OAuth token exchange, user info, repo listing, commit listing. All calls use `Authorization: Bearer <token>`. OAuth config (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`) read from environment variables — no hardcoded fallbacks.
 - **OAuth flow** (`src/app/api/oauth/github/route.ts` + `src/app/api/oauth/callback/github/route.ts`): standard GitHub OAuth 2.0. State stored in httpOnly cookie for CSRF protection. Token stored in `DataSource` table on callback.
 - **Scheduler** (`src/lib/scheduler.ts`): node-cron (in-process). Schedule strings like "Fri 17:00" parsed to cron expressions. Tasks persisted in SQLite via Prisma.
 - **Database** (`prisma/schema.prisma`): SQLite via Prisma. Models: `Config`, `Report`, `DataSource`, `ScheduledTask`.
@@ -40,20 +40,20 @@ npx prisma migrate dev                           # apply schema
 npx prisma db push                               # push schema without migration
 npx prisma studio                                # DB GUI
 
-# API testing
-curl localhost:3000/api/data-sources
-curl -X POST localhost:3000/api/generate -H 'Content-Type: application/json' -d '{"type":"weekly","allAuthors":true,"dryRun":true}'
+# API testing (replace <host> with your dev server address)
+curl <host>/api/data-sources
+curl -X POST <host>/api/generate -H 'Content-Type: application/json' -d '{"type":"weekly","allAuthors":true,"dryRun":true}'
 ```
 
 ## Config
 
-`.env` (gitignored) holds `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_API_BASE`, `OPENAI_MODEL`, and GitHub OAuth vars (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`). The DB `Config` table (managed via /settings page) overrides env vars at runtime. The git plugin reads its OAuth token and selected repos from the `DataSource` table (name="git", config JSON).
+`.env` (gitignored) holds `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_API_BASE`, `OPENAI_MODEL`, and GitHub OAuth vars (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`). All values must be provided via environment variables — no hardcoded fallbacks. The DB `Config` table (managed via /settings page) overrides env vars at runtime. The git plugin reads its OAuth token and selected repos from the `DataSource` table (name="git", config JSON).
 
 ### GitHub OAuth setup
 
 1. Go to https://github.com/settings/developers → OAuth Apps → New OAuth App
-2. Set Authorization callback URL to `http://localhost:3000/api/oauth/callback/github`
-3. Copy Client ID and Client Secret to `.env`
+2. Set Authorization callback URL to match `GITHUB_REDIRECT_URI` in `.env`
+3. Copy Client ID and Client Secret to `.env` as `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
 
 ## Data format
 

@@ -3,7 +3,7 @@
 > 全岗位智能工作汇报平台 —— 从工作数据源头自动采集，AI 自动生成汇报语言。
 > 汇报是副产品，工作本身才是输入。
 
-WorkReport AI 采用「数据源插件化」架构：每类岗位对应一个数据采集子应用，共享同一 AI 生成引擎。当前已落地 **Git Weekly Automation** 子应用（程序员），Task / Calendar / Doc 三个子应用规划中。
+WorkReport AI 采用「数据源插件化」架构：每类岗位对应一个数据源插件，共享同一 AI 生成引擎。当前已落地 **Git (GitHub)** 插件（通过 GitHub OAuth + API 获取提交记录），Task / Calendar / Doc 三个插件规划中。
 
 **100% TypeScript** — Next.js App Router + Prisma + SQLite + openai SDK + node-cron
 
@@ -17,26 +17,30 @@ workreport-ai/
 │   │   ├── page.tsx              # 首页 Dashboard
 │   │   ├── globals.css           # 全局样式 + Markdown 渲染样式
 │   │   ├── reports/page.tsx      # 报告管理（列表 + Markdown 预览）
-│   │   ├── data-sources/page.tsx # 数据源管理 + Git 采集
+│   │   ├── data-sources/page.tsx # 数据源管理 + GitHub 连接 + 仓库选择
 │   │   ├── settings/page.tsx     # API 配置
 │   │   └── api/                  # API Routes
 │   │       ├── generate/route.ts # POST 生成报告
-│   │       ├── collect/route.ts  # POST 采集数据
+│   │       ├── collect/route.ts  # POST 同步仓库列表
 │   │       ├── reports/route.ts  # GET/DELETE 报告管理
-│   │       ├── data-sources/route.ts # GET 数据源列表
-│   │       └── config/route.ts   # GET/POST 配置
+│   │       ├── data-sources/route.ts # GET 数据源 / POST 仓库选择/断开
+│   │       ├── config/route.ts   # GET/POST 配置
+│   │       └── oauth/            # GitHub OAuth
+│   │           ├── github/route.ts           # GET 发起授权
+│   │           └── callback/github/route.ts  # GET 授权回调
 │   ├── lib/                      # 核心逻辑
 │   │   ├── models.ts             # WorkRecord / PluginMeta / TimeRange
 │   │   ├── plugin.ts             # DataSourcePlugin 接口
 │   │   ├── registry.ts           # 插件注册表
-│   │   ├── storage.ts            # JSONL 存储工具
+│   │   ├── storage.ts            # JSONL 存储工具（供规划中插件使用）
 │   │   ├── ai-engine.ts          # AI 生成引擎（OpenAI 兼容）
 │   │   ├── templates.ts          # 模板加载与 {{占位符}} 填充
 │   │   ├── dates.ts              # ISO 周/日/月时间范围计算
 │   │   ├── scheduler.ts          # 定时任务（node-cron）
+│   │   ├── github.ts             # GitHub API 客户端（OAuth + REST）
 │   │   └── prisma.ts             # Prisma 客户端单例
 │   └── plugins/                  # 数据源插件
-│       ├── git.ts                # ✅ Git Weekly Automation
+│       ├── git.ts                # ✅ Git (GitHub OAuth + API)
 │       ├── task.ts               # ⏳ Task Reporter（骨架）
 │       ├── calendar.ts           # ⏳ Calendar Reporter（骨架）
 │       └── doc.ts                # ⏳ Doc Reporter（骨架）
@@ -47,10 +51,9 @@ workreport-ai/
 │   ├── daily-report.md
 │   └── monthly-report.md
 ├── data/                         # 运行时数据（gitignored）
-│   ├── commits/                  # Git 提交记录（从 git-weekly-automation）
 │   └── reports/                  # 生成的报告 .md 文件
 ├── package.json
-├── next.config.ts
+├── next.config.mjs
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── .env.example
@@ -60,11 +63,15 @@ workreport-ai/
 ### 数据流
 
 ```
-各数据源 ──► 插件 collect() ──► data/ ──► 插件 read() ──► 插件 formatForPrompt()
-                                                              │
-                                              ai-engine.generateReport()
-                                                              │
-                                              templates/*.md ──► SQLite + reports/*.md
+GitHub OAuth ──► token 存入 DB
+                      │
+用户选择仓库 ──► plugin.collect() 通过 GitHub API 同步仓库列表
+                      │
+生成报告 ──► plugin.read() 调用 GitHub Commits API ──► WorkRecord[]
+                      │
+           plugin.formatForPrompt() ──► 按仓库分组
+                      │
+           ai-engine.generateReport() ──► templates/*.md ──► SQLite + reports/*.md
 ```
 
 ## 快速开始
@@ -79,30 +86,45 @@ npm install
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 OPENAI_API_KEY
 ```
 
-### 3. 初始化数据库
+编辑 `.env`，填入以下配置：
+
+| 变量 | 说明 |
+|------|------|
+| `DATABASE_URL` | SQLite 路径，默认 `file:./dev.db` |
+| `OPENAI_API_KEY` | OpenAI 兼容 API 密钥（DeepSeek / Ollama 等） |
+| `OPENAI_API_BASE` | API 地址，默认 `https://api.deepseek.com` |
+| `OPENAI_MODEL` | 模型名，默认 `deepseek-v4-flash` |
+| `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth App Client Secret |
+| `GITHUB_REDIRECT_URI` | OAuth 回调地址，如 `http://localhost:3000/api/oauth/callback/github` |
+
+### 3. 创建 GitHub OAuth App
+
+1. 前往 https://github.com/settings/developers → OAuth Apps → New OAuth App
+2. Authorization callback URL 填入 `GITHUB_REDIRECT_URI` 的值
+3. 将生成的 Client ID 和 Client Secret 填入 `.env`
+
+### 4. 初始化数据库
 
 ```bash
 npx prisma db push
-```
-
-### 4. 安装 Git 子应用
-
-Git 插件通过路径引用同级目录下的 [git-weekly-automation](../git-weekly-automation) 项目：
-
-```bash
-cd ../git-weekly-automation
-./scripts/setup          # 安装全局 Git Hook，此后每次 git commit 自动记录
 ```
 
 ### 5. 启动开发服务器
 
 ```bash
 npm run dev
-# 打开 http://localhost:3000
 ```
+
+### 6. 连接 GitHub
+
+1. 打开应用，进入「数据源」页面
+2. 点击「连接 GitHub」→ 授权
+3. 点击「同步仓库」→ 选择要纳入报告的仓库
+4. 在「设置」页面配置 API Key
+5. 回到首页生成周报
 
 ## 使用
 
@@ -110,29 +132,29 @@ npm run dev
 
 - **首页 Dashboard**：快速生成日报/周报/月报，查看数据源状态和最近报告
 - **报告管理**：查看历史报告，支持 Markdown 渲染
-- **数据源**：管理数据源，手动采集 Git 提交
+- **数据源**：连接 GitHub、选择仓库、同步仓库列表
 - **设置**：配置 API Key / Base URL / Model
 
 ### 通过 API
 
 ```bash
 # 生成周报
-curl -X POST http://localhost:3000/api/generate \
+curl -X POST http://<host>/api/generate \
   -H 'Content-Type: application/json' \
   -d '{"type":"weekly","allAuthors":true}'
 
-# 预览 prompt（不调用 API）
-curl -X POST http://localhost:3000/api/generate \
+# 预览 prompt（不调用 AI）
+curl -X POST http://<host>/api/generate \
   -H 'Content-Type: application/json' \
   -d '{"type":"weekly","allAuthors":true,"dryRun":true}'
 
-# 采集 Git 提交
-curl -X POST http://localhost:3000/api/collect \
+# 同步 GitHub 仓库列表
+curl -X POST http://<host>/api/collect \
   -H 'Content-Type: application/json' \
-  -d '{"plugin":"git","scan":["~/work"],"allAuthors":true}'
+  -d '{"plugin":"git"}'
 
 # 列出报告
-curl http://localhost:3000/api/reports
+curl http://<host>/api/reports
 ```
 
 ## API 一览
@@ -140,10 +162,13 @@ curl http://localhost:3000/api/reports
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/generate` | POST | 生成工作报告（日报/周报/月报） |
-| `/api/collect` | POST | 采集数据源记录 |
+| `/api/collect` | POST | 同步数据源（GitHub 仓库列表） |
 | `/api/reports` | GET | 列出/查看报告 |
 | `/api/reports` | DELETE | 删除报告 |
-| `/api/data-sources` | GET | 列出数据源插件 |
+| `/api/data-sources` | GET | 列出数据源插件及连接状态 |
+| `/api/data-sources` | POST | 仓库选择 / 断开连接 |
+| `/api/oauth/github` | GET | 发起 GitHub OAuth 授权 |
+| `/api/oauth/callback/github` | GET | GitHub OAuth 回调 |
 | `/api/config` | GET/POST | 读取/更新配置 |
 
 ## 模板占位符
@@ -161,7 +186,8 @@ curl http://localhost:3000/api/reports
 
 1. 在 `src/plugins/<name>.ts` 创建实现 `DataSourcePlugin` 接口的类
 2. 在 `src/lib/registry.ts` 的 `PLUGIN_FACTORIES` 中注册
-3. 插件只需关注「数据侧」（采集/读取/格式化），AI 生成、模板、调度全部复用平台核心
+3. 如需 OAuth，在 `src/app/api/oauth/<name>/` 和 `src/app/api/oauth/callback/<name>/` 创建路由
+4. 插件只需关注「数据侧」（采集/读取/格式化），AI 生成、模板、调度全部复用平台核心
 
 ## 依赖
 
@@ -171,4 +197,3 @@ curl http://localhost:3000/api/reports
 - **openai SDK** — AI 报告生成（OpenAI / DeepSeek / vLLM / Ollama / LiteLLM 等）
 - **node-cron** — 定时任务
 - **react-markdown** — 报告渲染
-- **Git** — Git 插件数据采集（委托给 git-weekly-automation）
