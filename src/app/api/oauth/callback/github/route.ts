@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { exchangeCodeForToken, getAuthenticatedUser, getGitHubOAuthConfig } from "@/lib/github";
+import { exchangeCodeForToken, getAuthenticatedUser, getGitHubOAuthConfig, getRequestOrigin } from "@/lib/github";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { clientId, clientSecret, redirectUri } = getGitHubOAuthConfig();
+    const origin = getRequestOrigin(req);
+    const { clientId, clientSecret, redirectUri } = getGitHubOAuthConfig(origin);
 
     // 换 token
     const token = await exchangeCodeForToken(

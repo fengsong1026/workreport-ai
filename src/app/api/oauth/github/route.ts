@@ -7,13 +7,14 @@
  * 使用随机 state 防止 CSRF，state 存入 cookie 在回调时验证。
  */
 
-import { NextResponse } from "next/server";
-import { buildAuthorizeUrl, getGitHubOAuthConfig } from "@/lib/github";
+import { NextRequest, NextResponse } from "next/server";
+import { buildAuthorizeUrl, getGitHubOAuthConfig, getRequestOrigin } from "@/lib/github";
 import { randomBytes } from "crypto";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const { clientId, redirectUri } = getGitHubOAuthConfig();
+    const origin = getRequestOrigin(req);
+    const { clientId, redirectUri } = getGitHubOAuthConfig(origin);
     const state = randomBytes(16).toString("hex");
 
     const authorizeUrl = buildAuthorizeUrl(clientId, redirectUri, state);

@@ -101,13 +101,16 @@ cp .env.example .env
 | `OPENAI_MODEL` | 模型名，默认 `deepseek-v4-flash` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App Client Secret |
-| `GITHUB_REDIRECT_URI` | OAuth 回调地址，如 `http://localhost:3000/api/oauth/callback/github` |
+| `GITHUB_REDIRECT_URI` | OAuth 回调地址，只配 path：`/api/oauth/callback/github`，运行时自动从请求推导 origin 拼接，本地/服务器/任意域名都无需改此值 |
 
 ### 3. 创建 GitHub OAuth App
 
 1. 前往 https://github.com/settings/developers → OAuth Apps → New OAuth App
-2. Authorization callback URL 填入 `GITHUB_REDIRECT_URI` 的值
+2. Authorization callback URL 填入**完整回调地址**（GitHub 要求完整 URL）：
+   - 本地开发：`http://localhost:8907/api/oauth/callback/github`
+   - Docker 部署：`http://<你的域名或IP>:8088/api/oauth/callback/github`
 3. 将生成的 Client ID 和 Client Secret 填入 `.env`
+4. `.env` 里的 `GITHUB_REDIRECT_URI` 保持 path 模式 `/api/oauth/callback/github` 即可，无需与 OAuth App 里的地址完全一致
 
 ### 4. 初始化数据库
 
@@ -173,7 +176,7 @@ curl http://<host>/api/reports
 cp .env.example .env
 # 编辑 .env：
 #   - DATABASE_URL 改为 file:./data/db/prod.db
-#   - GITHUB_REDIRECT_URI 改为 http://<你的域名或IP>:3000/api/oauth/callback/github
+#   - GITHUB_REDIRECT_URI 改为 http://<你的域名或IP>:8088/api/oauth/callback/github
 #   - 填入 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / OPENAI_API_KEY
 
 # 2. 构建并启动
@@ -195,7 +198,7 @@ docker build -t workreport-ai .
 # 2. 运行容器
 docker run -d \
   --name workreport-ai \
-  -p 3000:3000 \
+  -p 8088:3000 \
   --env-file .env \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \

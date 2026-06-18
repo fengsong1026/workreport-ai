@@ -5,6 +5,8 @@
  * 文档：https://docs.github.com/en/rest
  */
 
+import { NextRequest } from "next/server";
+
 const GITHUB_API = "https://api.github.com";
 const GITHUB_OAUTH_AUTHORIZE = "https://github.com/login/oauth/authorize";
 const GITHUB_OAUTH_TOKEN = "https://github.com/login/oauth/access_token";
@@ -261,22 +263,66 @@ export async function listCommits(
 }
 
 /**
- * 从环境变量获取 GitHub OAuth 配置
+ * 从请求中推导出完整的 origin（协议 + 主机）
+ *
+ * 支持反向代理（nginx）场景下的 x-forwarded-* headers，
+ * 保证获取到的是用户实际访问的地址，而非容器内部地址。
  */
-export function getGitHubOAuthConfig() {
+export function getRequestOrigin(req: NextRequest): string {
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  const host = req.headers.get("host");
+
+  const finalHost = forwardedHost || host;
+  if (finalHost) {
+    const proto = forwardedProto || (finalHost.startsWith("localhost") ? "http" : "https");
+    return `${proto}://${finalHost}`;
+  }
+
+  // 兜底：从请求 URL 解析
+  return new URL(req.url).origin;
+}
+
+/**
+ * 从环境变量获取 GitHub OAuth 配置
+ *
+ * GITHUB_REDIRECT_URI 支持两种形式：
+ * - 完整 URL（向后兼容）：http://localhost:8907/api/oauth/callback/github
+ * - 仅 path（推荐）：/api/oauth/callback/github
+ *   path 模式下需传入 origin 参数，运行时动态拼接，避免写死域名/端口，
+ *   本地、服务器、任意域名都不用改配置。
+ */
+export function getGitHubOAuthConfig(origin?: string) {
   const clientId = process.env.GITHUB_CLIENT_ID || "";
   const clientSecret = process.env.GITHUB_CLIENT_SECRET || "";
-  const redirectUri = process.env.GITHUB_REDIRECT_URI || "";
+  const redirectUriConfig = process.env.GITHUB_REDIRECT_URI || "";
 
   if (!clientId || !clientSecret) {
     throw new Error(
       "GitHub OAuth 未配置。请在 .env 中设置 GITHUB_CLIENT_ID 和 GITHUB_CLIENT_SECRET。",
     );
   }
-  if (!redirectUri) {
+  if (!redirectUriConfig) {
     throw new Error(
       "GitHub OAuth 回调地址未配置。请在 .env 中设置 GITHUB_REDIRECT_URI。",
     );
+  }
+
+  // 完整 URL 直接用（向后兼容老配置）
+  const isAbsoluteUrl = /^https?:\/\//i.test(redirectUriConfig);
+  let redirectUri: string;
+  if (isAbsoluteUrl) {
+    redirectUri = redirectUriConfig;
+  } else {
+    if (!origin) {
+      throw new Error(
+        "GITHUB_REDIRECT_URI 配置为 path 模式时，必须传入请求 origin。",
+      );
+    }
+    const path = redirectUriConfig.startsWith("/")
+      ? redirectUriConfig
+      : `/${redirectUriConfig}`;
+    redirectUri = `${origin}${path}`;
   }
 
   return { clientId, clientSecret, redirectUri };

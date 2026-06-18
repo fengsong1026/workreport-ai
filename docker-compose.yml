@@ -5,7 +5,7 @@ services:
     container_name: workreport-ai
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8088:3000"
     env_file:
       - .env
     volumes:
