@@ -4,7 +4,9 @@
  * POST /api/collect
  *
  * 请求体：
- *   { plugin: "git", scan: string[], since?, until?, author?, allAuthors?, dryRun?, maxDepth? }
+ *   { plugin: "git" }
+ *
+ * 对 GitHub 插件：从 GitHub API 同步仓库列表（不采集提交，提交在 read() 时实时获取）
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,13 +15,6 @@ import type { CollectArgs } from "@/lib/plugin";
 
 interface CollectBody {
   plugin?: string;
-  scan?: string[];
-  since?: string;
-  until?: string;
-  author?: string;
-  allAuthors?: boolean;
-  dryRun?: boolean;
-  maxDepth?: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -42,21 +37,17 @@ export async function POST(req: NextRequest) {
   }
 
   const args: CollectArgs = {
-    scan: body.scan || [],
-    since: body.since,
-    until: body.until,
-    author: body.author,
-    allAuthors: body.allAuthors || false,
-    dryRun: body.dryRun || false,
-    maxDepth: body.maxDepth,
+    scan: [],
+    allAuthors: true,
+    dryRun: false,
   };
 
   try {
-    // collect 委托给插件，返回的状态通过 stdout 输出
-    await plugin.collect(args);
+    const count = await plugin.collect(args);
     return NextResponse.json({
       success: true,
-      message: `采集完成（插件: ${plugin.meta.displayName}）`,
+      message: `同步完成，共 ${count} 个仓库`,
+      count,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

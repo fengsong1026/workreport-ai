@@ -8,10 +8,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { getRegistry } from "@/lib/registry";
-import { getRange, getGitUserEmail } from "@/lib/dates";
+import { getRange } from "@/lib/dates";
 import { defaultTemplatePath } from "@/lib/templates";
 import { generateReport, loadConfig, PlatformConfig } from "@/lib/ai-engine";
 import { prisma } from "@/lib/prisma";
@@ -78,14 +78,14 @@ export async function POST(req: NextRequest) {
     month: body.month,
   });
 
-  // 作者过滤
+  // 作者过滤：allAuthors=true 或未指定 author 时不过滤
   let email: string | undefined;
   if (body.allAuthors) {
     email = undefined;
   } else if (body.author) {
     email = body.author;
   } else {
-    email = getGitUserEmail() || undefined;
+    email = undefined;
   }
 
   // 读取并格式化各插件记录

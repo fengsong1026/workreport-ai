@@ -76,5 +76,3 @@ export async function POST(req: NextRequest) {
     },
   });
 }
-
-export { getConfig };

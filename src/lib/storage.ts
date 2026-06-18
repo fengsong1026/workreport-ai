@@ -1,8 +1,8 @@
 /**
  * JSONL 存储工具：供没有自带存储的插件使用
  *
- * GitPlugin 直接复用 git-weekly-automation 的 data/commits/ 目录，
- * 因此不使用本模块。规划中的 Task / Calendar / Doc 插件落地后可基于本模块
+ * GitPlugin 通过 GitHub API 实时获取数据，不使用本模块。
+ * 规划中的 Task / Calendar / Doc 插件落地后可基于本模块
  * 将自己的数据写入 data/sources/<plugin>/YYYY-WXX.jsonl。
  */
 

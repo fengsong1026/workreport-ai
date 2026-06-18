@@ -1,165 +1,163 @@
 /**
- * Git 数据源插件 —— 路径引用 git-weekly-automation 子应用
+ * Git 数据源插件 —— 通过 GitHub OAuth + API 获取提交记录
  *
- * 本插件不复制 git-weekly-automation 的代码，而是通过 config 中配置的 `path`
- * 指向同级目录下的 git-weekly-automation 项目：
- *   - collect() 委托执行其 scripts/collect-commits 采集器
- *   - read()    直接读取其 data/commits/*.jsonl（格式稳定、文档化）
- *   - formatForPrompt() 在平台侧实现按仓库分组格式化
+ * 数据流：
+ *   1. 用户在 Web UI 点击"连接 GitHub"→ OAuth 授权 → token 存入 DB
+ *   2. collect()  通过 GitHub API 拉取用户仓库列表，存入 DB 供用户选择
+ *   3. read()     对用户选中的仓库调用 GitHub Commits API，返回 WorkRecord
+ *   4. formatForPrompt()  按仓库分组格式化
  *
- * 全局 Git Hook 的安装仍由 git-weekly-automation/scripts/setup 负责。
+ * 零本地依赖：不需要 git、不需要 Python、不需要本地仓库。
  */
 
-import { execFile } from "child_process";
-import { existsSync, readFileSync } from "fs";
-import { join, resolve, isAbsolute } from "path";
 import { PluginMeta, WorkRecord } from "@/lib/models";
 import { CollectArgs, DataSourcePlugin, defaultStats } from "@/lib/plugin";
+import { prisma } from "@/lib/prisma";
+import {
+  listCommits,
+  listUserRepos,
+  type GitHubRepo,
+} from "@/lib/github";
 
 const MAX_RECORDS_FOR_PROMPT = 300;
+
+/**
+ * DataSource.config 中存储的 JSON 结构
+ */
+interface GitDataSourceConfig {
+  token: string;
+  user: { login: string; name: string | null; email: string | null };
+  repos: Array<{ id: number; fullName: string; selected: boolean }>;
+}
 
 export class GitPlugin implements DataSourcePlugin {
   readonly meta = new PluginMeta(
     "git",
-    "Git Weekly Automation",
-    "Git 提交记录",
+    "Git (GitHub)",
+    "GitHub 提交记录",
     "程序员 / 技术研究员",
     "done",
   );
 
   constructor(
-    private projectDir: string,
-    private config: Record<string, unknown> = {},
+    private _projectDir: string,
+    private _config: Record<string, unknown> = {},
   ) {}
 
-  /** git-weekly-automation 项目根目录 */
-  get gitProjectDir(): string {
-    const raw = (this.config.path as string) || "../git-weekly-automation";
-    return isAbsolute(raw) ? raw : resolve(this.projectDir, raw);
-  }
-
-  get commitsDir(): string {
-    return join(this.gitProjectDir, "data", "commits");
-  }
-
-  get collectScript(): string {
-    return join(this.gitProjectDir, "scripts", "collect-commits");
+  /**
+   * 从 DB 读取 GitHub 连接配置
+   */
+  private async loadConfig(): Promise<GitDataSourceConfig | null> {
+    const row = await prisma.dataSource.findUnique({ where: { name: "git" } });
+    if (!row || !row.connected) return null;
+    try {
+      return JSON.parse(row.config) as GitDataSourceConfig;
+    } catch {
+      return null;
+    }
   }
 
   /**
-   * 采集：委托给 git-weekly-automation/scripts/collect-commits
+   * 采集：通过 GitHub API 拉取用户仓库列表，存入 DB
+   *
+   * @returns 仓库数量
    */
-  async collect(args: CollectArgs): Promise<number> {
-    if (!existsSync(this.collectScript)) {
-      console.error(
-        `[!] 未找到 git-weekly-automation 采集器: ${this.collectScript}\n` +
-          `    请检查 config.json 中 plugins.git.path 配置。`,
-      );
-      return 0;
+  async collect(_args: CollectArgs): Promise<number> {
+    const cfg = await this.loadConfig();
+    if (!cfg) {
+      throw new Error("GitHub 未连接，请先在数据源页面点击「连接 GitHub」。");
     }
 
-    const cmdArgs: string[] = [];
-    for (const s of args.scan || []) cmdArgs.push("--scan", s);
-    if (args.since) cmdArgs.push("--since", args.since);
-    if (args.until) cmdArgs.push("--until", args.until);
-    if (args.author) cmdArgs.push("--author", args.author);
-    if (args.allAuthors) cmdArgs.push("--all-authors");
-    if (args.dryRun) cmdArgs.push("--dry-run");
-    if (args.maxDepth) cmdArgs.push("--max-depth", String(args.maxDepth));
+    console.log(`[*] 从 GitHub API 拉取 ${cfg.user.login} 的仓库列表...`);
+    const repos = await listUserRepos(cfg.token);
 
-    console.log(`[*] 委托 git-weekly-automation 采集器: ${this.gitProjectDir}`);
+    // 保留用户之前的选择状态
+    const prevSelected = new Set(
+      cfg.repos.filter((r) => r.selected).map((r) => r.id),
+    );
 
-    return new Promise((resolvePromise) => {
-      execFile("python3", [this.collectScript, ...cmdArgs], (error, stdout, stderr) => {
-        if (stdout) process.stdout.write(stdout);
-        if (stderr) process.stderr.write(stderr);
-        if (error) {
-          console.error(`[!] 采集器执行失败: ${error.message}`);
-        }
-        resolvePromise(error ? 0 : 0);
-      });
+    const newRepos = repos.map((r: GitHubRepo) => ({
+      id: r.id,
+      fullName: r.fullName,
+      selected: prevSelected.has(r.id),
+    }));
+
+    const updatedConfig: GitDataSourceConfig = {
+      ...cfg,
+      repos: newRepos,
+    };
+
+    await prisma.dataSource.update({
+      where: { name: "git" },
+      data: { config: JSON.stringify(updatedConfig) },
     });
+
+    console.log(`[*] 同步完成，共 ${newRepos.length} 个仓库`);
+    return newRepos.length;
   }
 
   /**
-   * 读取：直接读取 data/commits/*.jsonl，归一化为 WorkRecord
+   * 读取：对选中的仓库调用 GitHub Commits API
    */
   async read(since: Date, until: Date, email?: string): Promise<WorkRecord[]> {
-    const records: WorkRecord[] = [];
-
-    if (!existsSync(this.commitsDir)) {
-      console.error(
-        `[!] 未找到提交数据目录: ${this.commitsDir}\n` +
-          `    请先在 git-weekly-automation 中运行 ./scripts/setup 安装 Hook，\n` +
-          `    或执行 collect 采集历史记录。`,
-      );
-      return records;
+    const cfg = await this.loadConfig();
+    if (!cfg) {
+      console.error("[!] GitHub 未连接，无法读取提交记录。");
+      return [];
     }
 
-    // 遍历区间内可能涉及的周文件
-    const seenWeeks = new Set<string>();
-    const cur = new Date(since);
-    while (cur.getTime() <= until.getTime()) {
-      const isoYear = cur.getUTCFullYear();
-      const isoWeekNum = isoWeek(cur);
-      const weekKey = `${isoYear}-W${isoWeekNum.toString().padStart(2, "0")}`;
-      if (!seenWeeks.has(weekKey)) {
-        seenWeeks.add(weekKey);
-        const weekFile = join(this.commitsDir, `${weekKey}.jsonl`);
-        if (existsSync(weekFile)) {
-          records.push(...this.readFile(weekFile, since, until, email));
+    const selectedRepos = cfg.repos.filter((r) => r.selected);
+    if (selectedRepos.length === 0) {
+      console.error("[!] 未选择任何仓库，请在数据源页面选择要纳入报告的仓库。");
+      return [];
+    }
+
+    // email 定义时按 email 或 login 过滤（客户端），否则返回所有作者
+    const records: WorkRecord[] = [];
+
+    for (const repo of selectedRepos) {
+      const [owner, repoName] = repo.fullName.split("/", 2);
+      if (!owner || !repoName) continue;
+
+      try {
+        const commits = await listCommits(
+          cfg.token,
+          owner,
+          repoName,
+          since,
+          until,
+        );
+
+        for (const c of commits) {
+          // 客户端过滤：匹配 email 或 GitHub login
+          if (email && c.authorEmail !== email && c.authorLogin !== email) continue;
+
+          const subject = c.message
+            ? c.message.split("\n", 1)[0]
+            : "(no message)";
+
+          records.push({
+            source: "git",
+            timestamp: c.authorDate,
+            title: subject,
+            detail: c.message,
+            project: repo.fullName,
+            author: c.authorName,
+            email: c.authorEmail,
+            raw: {
+              sha: c.sha,
+              login: c.authorLogin,
+              html_url: c.htmlUrl,
+            },
+          });
         }
+      } catch (e) {
+        console.error(`[!] 获取 ${repo.fullName} 提交失败:`, e);
       }
-      cur.setUTCDate(cur.getUTCDate() + 1);
     }
 
     records.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     return records;
-  }
-
-  private readFile(
-    path: string,
-    since: Date,
-    until: Date,
-    email?: string,
-  ): WorkRecord[] {
-    const out: WorkRecord[] = [];
-    try {
-      const content = readFileSync(path, "utf-8");
-      for (const line of content.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let entry: Record<string, unknown>;
-        try {
-          entry = JSON.parse(trimmed);
-        } catch {
-          continue;
-        }
-
-        const tsStr = entry.timestamp as string | undefined;
-        if (!tsStr) continue;
-        const ts = new Date(tsStr);
-        if (isNaN(ts.getTime())) continue;
-        if (!(since.getTime() <= ts.getTime() && ts.getTime() <= until.getTime())) continue;
-        if (email && (entry.email as string) !== email) continue;
-
-        const message = ((entry.message as string) || "").trim();
-        const subject = message ? message.split("\n", 1)[0] : "(no message)";
-        out.push({
-          source: "git",
-          timestamp: tsStr,
-          title: subject,
-          detail: message,
-          project: (entry.repo as string) || "unknown",
-          author: (entry.author as string) || "",
-          email: (entry.email as string) || "",
-          raw: entry,
-        });
-      }
-    } catch (e) {
-      console.error(`[!] 读取 ${path} 失败:`, e);
-    }
-    return out;
   }
 
   /**
@@ -188,8 +186,8 @@ export class GitPlugin implements DataSourcePlugin {
       for (const r of repoRecords) {
         const ts = r.timestamp.slice(0, 10);
         const author = r.author || "?";
-        const branch = ((r.raw?.branch as string) || "?");
-        lines.push(`- [${ts}] [${branch}] ${author}: ${r.title}`);
+        const sha = ((r.raw?.sha as string) || "").slice(0, 7);
+        lines.push(`- [${ts}] [#${sha}] ${author}: ${r.title}`);
       }
     }
 
@@ -203,15 +201,4 @@ export class GitPlugin implements DataSourcePlugin {
   stats(records: WorkRecord[]): { count: number; projectCount: number } {
     return defaultStats(records);
   }
-}
-
-/**
- * 计算某日期所属 ISO 周
- */
-function isoWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }

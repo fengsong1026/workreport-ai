@@ -1,12 +1,13 @@
 /**
  * 数据源管理 API
  *
- * GET /api/data-sources          列出所有数据源插件
- * POST /api/data-sources         更新数据源配置（如 git.path）
+ * GET  /api/data-sources          列出所有数据源插件 + 连接状态
+ * POST /api/data-sources          更新数据源配置（仓库选择 / 断开连接）
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getRegistry } from "@/lib/registry";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const registry = getRegistry();
@@ -18,22 +19,95 @@ export async function GET() {
     status: p.meta.status,
     available: p.meta.isAvailable,
   }));
-  return NextResponse.json({ plugins });
+
+  // 读取 DB 中的连接状态
+  const dsRows = await prisma.dataSource.findMany();
+  const connections = new Map(dsRows.map((r) => [r.name, r]));
+
+  // 为每个插件附加连接信息
+  const result = plugins.map((p) => {
+    const conn = connections.get(p.name);
+    if (!conn) {
+      return { ...p, connected: false };
+    }
+
+    let extra: Record<string, unknown> = {};
+    if (p.name === "git" && conn.connected) {
+      try {
+        const cfg = JSON.parse(conn.config) as {
+          user?: { login?: string; name?: string | null };
+          repos?: Array<{ id: number; fullName: string; selected: boolean }>;
+        };
+        extra = {
+          user: cfg.user,
+          repoCount: cfg.repos?.length || 0,
+          selectedRepoCount: cfg.repos?.filter((r) => r.selected).length || 0,
+          repos: cfg.repos || [],
+        };
+      } catch {
+        // config 解析失败，忽略
+      }
+    }
+
+    return {
+      ...p,
+      connected: conn.connected,
+      ...extra,
+    };
+  });
+
+  return NextResponse.json({ plugins: result });
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { name, config } = body as { name: string; config: Record<string, unknown> };
+  const { name, action, repos } = body as {
+    name: string;
+    action?: "select-repos" | "disconnect";
+    repos?: number[];
+  };
 
   if (!name) {
     return NextResponse.json({ error: "缺少 name 参数" }, { status: 400 });
   }
 
-  // 目前仅支持 git.path 配置
-  // 实际配置持久化可扩展到 DataSource 表
-  return NextResponse.json({
-    success: true,
-    message: `数据源 ${name} 配置已更新`,
-    config,
-  });
+  const row = await prisma.dataSource.findUnique({ where: { name } });
+  if (!row) {
+    return NextResponse.json({ error: `数据源 ${name} 未找到` }, { status: 404 });
+  }
+
+  if (action === "disconnect") {
+    await prisma.dataSource.update({
+      where: { name },
+      data: { connected: false },
+    });
+    return NextResponse.json({ success: true, message: `${name} 已断开连接` });
+  }
+
+  if (action === "select-repos" && name === "git") {
+    const cfg = JSON.parse(row.config) as {
+      token: string;
+      user: { login: string; name: string | null; email: string | null };
+      repos: Array<{ id: number; fullName: string; selected: boolean }>;
+    };
+
+    const selectedIds = new Set(repos || []);
+    cfg.repos = cfg.repos.map((r) => ({
+      ...r,
+      selected: selectedIds.has(r.id),
+    }));
+
+    await prisma.dataSource.update({
+      where: { name },
+      data: { config: JSON.stringify(cfg) },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `已选择 ${selectedIds.size} 个仓库`,
+      selectedCount: selectedIds.size,
+    });
+  }
+
+  return NextResponse.json({ error: "未知操作" }, { status: 400 });
 }
