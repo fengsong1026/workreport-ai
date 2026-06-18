@@ -40,10 +40,23 @@ npx prisma migrate dev                           # apply schema
 npx prisma db push                               # push schema without migration
 npx prisma studio                                # DB GUI
 
+# Docker deployment
+docker compose up -d --build                     # build & start container
+docker compose logs -f                           # view logs
+docker compose down                              # stop
+
 # API testing (replace <host> with your dev server address)
 curl <host>/api/data-sources
 curl -X POST <host>/api/generate -H 'Content-Type: application/json' -d '{"type":"weekly","allAuthors":true,"dryRun":true}'
 ```
+
+## Docker deployment
+
+- **Dockerfile**: multi-stage build (deps → builder → runner). Base image `node:18-alpine` with `openssl` + `libc6-compat` for Prisma.
+- **docker-entrypoint.sh**: runs `prisma db push --skip-generate` on container start to auto-initialize the SQLite database, then `npm start`.
+- **docker-compose.yml**: mounts `./data/db` and `./data/reports` for persistence. Reads `.env` via `env_file`. Health check on `/api/data-sources`.
+- **Production `DATABASE_URL`**: must be `file:./data/db/prod.db` (inside the mounted volume).
+- **`GITHUB_REDIRECT_URI`**: must point to the production domain, e.g. `https://your-domain.com/api/oauth/callback/github`.
 
 ## Config
 

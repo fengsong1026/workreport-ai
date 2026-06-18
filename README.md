@@ -52,6 +52,9 @@ workreport-ai/
 │   └── monthly-report.md
 ├── data/                         # 运行时数据（gitignored）
 │   └── reports/                  # 生成的报告 .md 文件
+├── Dockerfile                    # Docker 多阶段构建
+├── docker-compose.yml            # Docker Compose 编排
+├── docker-entrypoint.sh          # 容器入口脚本（自动初始化数据库）
 ├── package.json
 ├── next.config.mjs
 ├── tsconfig.json
@@ -155,6 +158,72 @@ curl -X POST http://<host>/api/collect \
 
 # 列出报告
 curl http://<host>/api/reports
+```
+
+## 部署
+
+### Docker 部署（推荐）
+
+项目提供 `Dockerfile` 和 `docker-compose.yml`，支持一键部署。容器启动时自动初始化 SQLite 数据库，无需手动执行 `prisma db push`。
+
+#### 方式一：Docker Compose（推荐）
+
+```bash
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑 .env：
+#   - DATABASE_URL 改为 file:./data/db/prod.db
+#   - GITHUB_REDIRECT_URI 改为 http://<你的域名或IP>:3000/api/oauth/callback/github
+#   - 填入 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / OPENAI_API_KEY
+
+# 2. 构建并启动
+docker compose up -d --build
+
+# 3. 查看日志
+docker compose logs -f
+
+# 4. 停止
+docker compose down
+```
+
+#### 方式二：Docker Build + Run
+
+```bash
+# 1. 构建镜像
+docker build -t workreport-ai .
+
+# 2. 运行容器
+docker run -d \
+  --name workreport-ai \
+  -p 3000:3000 \
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
+  --restart unless-stopped \
+  workreport-ai
+```
+
+#### 持久化
+
+Docker 部署通过 volume 挂载持久化以下数据：
+
+| 容器路径 | 宿主路径 | 说明 |
+|---------|---------|------|
+| `/app/data/db` | `./data/db` | SQLite 数据库文件 |
+| `/app/data/reports` | `./data/reports` | 生成的报告 .md 文件 |
+
+#### 生产环境注意事项
+
+- **HTTPS**：GitHub OAuth 回调要求 HTTPS，建议在容器前加 Nginx 反向代理 + Let's Encrypt
+- **环境变量**：生产环境通过 `--env-file` 或 Docker Secrets 注入，不要将 `.env` 提交到代码仓库
+- **更新部署**：`git pull && docker compose up -d --build`
+
+### 本地开发部署
+
+```bash
+npm install
+cp .env.example .env          # 填入配置
+npx prisma db push            # 初始化数据库
+npm run dev                   # 启动开发服务器
 ```
 
 ## API 一览
