@@ -266,13 +266,16 @@ export async function listCommits(
 export function getGitHubOAuthConfig() {
   const clientId = process.env.GITHUB_CLIENT_ID || "";
   const clientSecret = process.env.GITHUB_CLIENT_SECRET || "";
-  const redirectUri =
-    process.env.GITHUB_REDIRECT_URI ||
-    "http://localhost:3000/api/oauth/callback/github";
+  const redirectUri = process.env.GITHUB_REDIRECT_URI || "";
 
   if (!clientId || !clientSecret) {
     throw new Error(
       "GitHub OAuth 未配置。请在 .env 中设置 GITHUB_CLIENT_ID 和 GITHUB_CLIENT_SECRET。",
+    );
+  }
+  if (!redirectUri) {
+    throw new Error(
+      "GitHub OAuth 回调地址未配置。请在 .env 中设置 GITHUB_REDIRECT_URI。",
     );
   }
 
