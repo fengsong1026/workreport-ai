@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/";
+  const redirect = searchParams.get("redirect") || "/dashboard";
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

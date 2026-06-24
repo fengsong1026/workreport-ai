@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 const COOKIE_NAME = "wr_session";
-const PUBLIC_PAGES = ["/login", "/register"];
+const PUBLIC_PAGES = ["/", "/login", "/register"];
 const PUBLIC_API_PREFIX = "/api/auth/";
 
 function getSecret(): Uint8Array {

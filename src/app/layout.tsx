@@ -23,6 +23,9 @@ export default function RootLayout({
             </a>
             <div className="flex items-center gap-6 text-sm">
               <a href="/" className="hover:text-blue-600 transition-colors">
+                首页
+              </a>
+              <a href="/dashboard" className="hover:text-blue-600 transition-colors">
                 仪表盘
               </a>
               <a href="/reports" className="hover:text-blue-600 transition-colors">
