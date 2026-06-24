@@ -30,6 +30,8 @@ export interface CollectArgs {
   dryRun: boolean;
   /** 扫描深度 */
   maxDepth?: number;
+  /** 当前登录用户 ID（用于按用户隔离数据源配置） */
+  userId?: string;
 }
 
 /**
@@ -48,9 +50,10 @@ export interface DataSourcePlugin {
   /**
    * 读取 [since, until] 时间区间内的记录
    * @param email 若提供，仅返回该作者（邮箱）的记录
+   * @param userId 当前登录用户 ID（用于按用户隔离数据源配置）
    * @returns WorkRecord 列表，按时间升序
    */
-  read(since: Date, until: Date, email?: string): Promise<WorkRecord[]>;
+  read(since: Date, until: Date, email?: string, userId?: string): Promise<WorkRecord[]>;
 
   /**
    * 将记录格式化为 AI prompt 友好的文本（按项目分组等）

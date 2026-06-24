@@ -14,8 +14,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForToken, getAuthenticatedUser, getGitHubOAuthConfig } from "@/lib/github";
 import { getRequestOrigin } from "@/lib/oauth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  // OAuth 回调必须有关联的登录用户
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.redirect(
+      new URL("/login?redirect=/data-sources", req.url),
+    );
+  }
+
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -54,28 +63,29 @@ export async function GET(req: NextRequest) {
       redirectUri,
     );
 
-    // 获取用户信息
-    const user = await getAuthenticatedUser(token);
+    // 获取 GitHub 用户信息
+    const ghUser = await getAuthenticatedUser(token);
 
     // 存入 DB
     const config = JSON.stringify({
       token,
       user: {
-        login: user.login,
-        name: user.name,
-        email: user.email,
+        login: ghUser.login,
+        name: ghUser.name,
+        email: ghUser.email,
       },
       repos: [],
     });
 
     await prisma.dataSource.upsert({
-      where: { name: "git" },
+      where: { userId_name: { userId: user.id, name: "git" } },
       create: {
         name: "git",
         displayName: "Git (GitHub)",
         status: "done",
         connected: true,
         config,
+        userId: user.id,
       },
       update: {
         connected: true,

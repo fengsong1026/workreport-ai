@@ -10,7 +10,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// 平台配置（单行记录，id 固定为 0）
+/// 用户
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  reports      Report[]
+  dataSources  DataSource[]
+  tasks        ScheduledTask[]
+}
+
+/// 平台配置（单行记录，id 固定为 0，全局共享）
 model Config {
   id        Int      @id @default(0)
   apiKey    String   @default("")
@@ -31,29 +45,44 @@ model Report {
   content      String
   createdAt    DateTime @default(now())
 
-  @@index([type])
-  @@index([createdAt])
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([userId, createdAt])
 }
 
 /// 数据源连接状态
 model DataSource {
   id          String   @id @default(cuid())
-  name        String   @unique // "git", "task", ...
+  name        String // "git", "jira", ...
   displayName String
   status      String // "done" | "planned"
   connected   Boolean  @default(false)
   config      String   @default("{}") // JSON
   updatedAt   DateTime @default(now()) @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
 }
 
 /// 定时任务
 model ScheduledTask {
   id        String   @id @default(cuid())
-  name      String   @unique
+  name      String
   schedule  String // "Fri 17:00" 人类可读
   cronExpr  String // "0 17 * * 5" cron 表达式
   enabled   Boolean  @default(true)
   command   String // "generate"
   plugin    String? // null = 所有插件
   createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
 }

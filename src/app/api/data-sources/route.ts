@@ -9,8 +9,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRegistry } from "@/lib/registry";
 import { prisma } from "@/lib/prisma";
 import { OAUTH_PROVIDERS } from "@/lib/oauth-providers";
+import { requireUser } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const user = await requireUser(req);
+  if (user instanceof NextResponse) return user;
+
   const registry = getRegistry();
   const plugins = registry.all().map((p) => ({
     name: p.meta.name,
@@ -21,8 +25,10 @@ export async function GET() {
     available: p.meta.isAvailable,
   }));
 
-  // 读取 DB 中的连接状态
-  const dsRows = await prisma.dataSource.findMany();
+  // 读取 DB 中的连接状态（仅当前用户）
+  const dsRows = await prisma.dataSource.findMany({
+    where: { userId: user.id },
+  });
   const connections = new Map(dsRows.map((r) => [r.name, r]));
 
   // 为每个插件附加连接信息
@@ -74,6 +80,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await requireUser(req);
+  if (user instanceof NextResponse) return user;
+
   const body = await req.json();
   const { name, action, repos } = body as {
     name: string;
@@ -85,14 +94,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "缺少 name 参数" }, { status: 400 });
   }
 
-  const row = await prisma.dataSource.findUnique({ where: { name } });
+  const row = await prisma.dataSource.findUnique({
+    where: { userId_name: { userId: user.id, name } },
+  });
   if (!row) {
     return NextResponse.json({ error: `数据源 ${name} 未找到` }, { status: 404 });
   }
 
   if (action === "disconnect") {
     await prisma.dataSource.update({
-      where: { name },
+      where: { userId_name: { userId: user.id, name } },
       data: { connected: false },
     });
     return NextResponse.json({ success: true, message: `${name} 已断开连接` });
@@ -112,7 +123,7 @@ export async function POST(req: NextRequest) {
     }));
 
     await prisma.dataSource.update({
-      where: { name },
+      where: { userId_name: { userId: user.id, name } },
       data: { config: JSON.stringify(cfg) },
     });
 

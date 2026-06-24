@@ -45,10 +45,13 @@ export class GitPlugin implements DataSourcePlugin {
   ) {}
 
   /**
-   * 从 DB 读取 GitHub 连接配置
+   * 从 DB 读取 GitHub 连接配置（按当前用户隔离）
    */
-  private async loadConfig(): Promise<GitDataSourceConfig | null> {
-    const row = await prisma.dataSource.findUnique({ where: { name: "git" } });
+  private async loadConfig(userId?: string): Promise<GitDataSourceConfig | null> {
+    if (!userId) return null;
+    const row = await prisma.dataSource.findUnique({
+      where: { userId_name: { userId, name: "git" } },
+    });
     if (!row || !row.connected) return null;
     try {
       return JSON.parse(row.config) as GitDataSourceConfig;
@@ -62,8 +65,8 @@ export class GitPlugin implements DataSourcePlugin {
    *
    * @returns 仓库数量
    */
-  async collect(_args: CollectArgs): Promise<number> {
-    const cfg = await this.loadConfig();
+  async collect(args: CollectArgs): Promise<number> {
+    const cfg = await this.loadConfig(args.userId);
     if (!cfg) {
       throw new Error("GitHub 未连接，请先在数据源页面点击「连接 GitHub」。");
     }
@@ -88,7 +91,7 @@ export class GitPlugin implements DataSourcePlugin {
     };
 
     await prisma.dataSource.update({
-      where: { name: "git" },
+      where: { userId_name: { userId: args.userId!, name: "git" } },
       data: { config: JSON.stringify(updatedConfig) },
     });
 
@@ -99,8 +102,8 @@ export class GitPlugin implements DataSourcePlugin {
   /**
    * 读取：对选中的仓库调用 GitHub Commits API
    */
-  async read(since: Date, until: Date, email?: string): Promise<WorkRecord[]> {
-    const cfg = await this.loadConfig();
+  async read(since: Date, until: Date, email?: string, userId?: string): Promise<WorkRecord[]> {
+    const cfg = await this.loadConfig(userId);
     if (!cfg) {
       console.error("[!] GitHub 未连接，无法读取提交记录。");
       return [];

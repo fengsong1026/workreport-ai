@@ -15,6 +15,7 @@ import { getRange } from "@/lib/dates";
 import { defaultTemplatePath } from "@/lib/templates";
 import { generateReport, loadConfig, PlatformConfig } from "@/lib/ai-engine";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/auth";
 
 interface GenerateBody {
   type?: "daily" | "weekly" | "monthly";
@@ -45,6 +46,9 @@ async function loadDbConfig(): Promise<PlatformConfig> {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await requireUser(req);
+  if (user instanceof NextResponse) return user;
+
   const body = (await req.json()) as GenerateBody;
   const reportType = body.type || "weekly";
 
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
   const totalProjects = new Set<string>();
 
   for (const p of plugins) {
-    const records = await p.read(timeRange.start, timeRange.end, email);
+    const records = await p.read(timeRange.start, timeRange.end, email, user.id);
     if (records.length === 0) continue;
 
     totalCount += records.length;
@@ -165,6 +169,7 @@ export async function POST(req: NextRequest) {
         recordCount: totalCount,
         projectCount: totalProjects.size,
         content: report,
+        userId: user.id,
       },
     });
 

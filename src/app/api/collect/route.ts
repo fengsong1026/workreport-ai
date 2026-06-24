@@ -12,12 +12,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRegistry } from "@/lib/registry";
 import type { CollectArgs } from "@/lib/plugin";
+import { requireUser } from "@/lib/auth";
 
 interface CollectBody {
   plugin?: string;
 }
 
 export async function POST(req: NextRequest) {
+  const user = await requireUser(req);
+  if (user instanceof NextResponse) return user;
+
   const body = (await req.json()) as CollectBody;
   const pluginName = body.plugin || "git";
 
@@ -40,6 +44,7 @@ export async function POST(req: NextRequest) {
     scan: [],
     allAuthors: true,
     dryRun: false,
+    userId: user.id,
   };
 
   try {

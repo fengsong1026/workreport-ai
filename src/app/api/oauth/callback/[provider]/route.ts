@@ -19,11 +19,20 @@ import {
 } from "@/lib/oauth";
 import { getProviderConfig } from "@/lib/oauth-providers";
 import { prisma } from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { provider: string } },
 ) {
+  // OAuth 回调必须有关联的登录用户
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.redirect(
+      new URL("/login?redirect=/data-sources", req.url),
+    );
+  }
+
   const provider = params.provider;
   const providerConfig = getProviderConfig(provider);
 
@@ -73,13 +82,14 @@ export async function GET(
     });
 
     await prisma.dataSource.upsert({
-      where: { name: provider },
+      where: { userId_name: { userId: user.id, name: provider } },
       create: {
         name: provider,
         displayName: providerConfig.displayName,
         status: "planned",
         connected: true,
         config: dbConfig,
+        userId: user.id,
       },
       update: {
         connected: true,

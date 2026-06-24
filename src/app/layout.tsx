@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import UserNav from "./components/UserNav";
 
 export const metadata: Metadata = {
   title: "WorkReport AI — 全岗位智能工作汇报平台",
@@ -39,6 +40,7 @@ export default function RootLayout({
               >
                 设置
               </a>
+              <UserNav />
             </div>
           </div>
         </nav>
