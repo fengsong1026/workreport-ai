@@ -37,11 +37,8 @@ export default function RootLayout({
               >
                 数据源
               </a>
-              <a
-                href="/settings"
-                className="hover:text-blue-600 transition-colors"
-              >
-                设置
+              <a href="/schedule" className="hover:text-blue-600 transition-colors">
+                调度
               </a>
               <UserNav />
             </div>

@@ -42,7 +42,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-lg md:text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            不是又一个"填表式周报工具"。<br className="hidden sm:block" />
+            不是又一个&quot;填表式周报工具&quot;。<br className="hidden sm:block" />
             从工作数据源头自动采集，AI 自动生成——
             你只管干活，汇报交给 AI。
           </p>

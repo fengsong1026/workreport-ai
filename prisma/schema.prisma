@@ -71,14 +71,14 @@ model DataSource {
 
 /// 定时任务
 model ScheduledTask {
-  id        String   @id @default(cuid())
-  name      String
-  schedule  String // "Fri 17:00" 人类可读
-  cronExpr  String // "0 17 * * 5" cron 表达式
-  enabled   Boolean  @default(true)
-  command   String // "generate"
-  plugin    String? // null = 所有插件
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  name       String
+  schedule   String // "Fri 17:00" 人类可读
+  cronExpr   String // "0 17 * * 5" cron 表达式
+  reportType String   @default("weekly") // "daily" | "weekly" | "monthly"
+  enabled    Boolean  @default(true)
+  plugin     String? // null = 所有已落地插件
+  createdAt  DateTime @default(now())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
