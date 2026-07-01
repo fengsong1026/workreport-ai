@@ -22,6 +22,23 @@ fi
 echo "==> Restarting service..."
 docker compose up -d
 
+# Wait for health check
+echo "==> Waiting for service to be healthy..."
+for i in $(seq 1 30); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/api/health 2>/dev/null || echo "000")
+  if [ "${STATUS}" = "200" ]; then
+    echo "==> Health check passed (HTTP ${STATUS})"
+    break
+  fi
+  echo "    Attempt ${i}/30: HTTP ${STATUS}, retrying..."
+  sleep 2
+done
+
+if [ "${STATUS}" != "200" ]; then
+  echo "!!> Health check failed after 30 attempts"
+  exit 1
+fi
+
 # Remove old unused images
 echo "==> Cleaning up old images..."
 docker image prune -f
