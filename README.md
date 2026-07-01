@@ -165,19 +165,18 @@ curl http://<host>/api/reports
 
 ## 部署
 
-### Docker 部署（推荐）
+### Docker 部署
 
 项目提供 `Dockerfile` 和 `docker-compose.yml`，支持一键部署。容器启动时自动初始化 SQLite 数据库，无需手动执行 `prisma db push`。
 
-#### 方式一：Docker Compose（推荐）
+> **注意**：SQLite 数据库存储在容器内，不持久化。容器重启后数据库会重置（用户、配置、报告记录丢失），仅报告 .md 文件通过卷持久化。如需保留数据库，在 `docker-compose.yml` 中添加 `- ./data/db:/app/data/db` 卷挂载即可。
+
+#### 快速启动
 
 ```bash
 # 1. 配置环境变量
 cp .env.example .env
-# 编辑 .env：
-#   - DATABASE_URL 改为 file:./data/db/prod.db
-#   - GITHUB_REDIRECT_URI 改为 http://<你的域名或IP>:8088/api/oauth/callback/github
-#   - 填入 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / OPENAI_API_KEY
+# 编辑 .env，填入 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / OPENAI_API_KEY 等
 
 # 2. 构建并启动
 docker compose up -d --build
@@ -189,36 +188,59 @@ docker compose logs -f
 docker compose down
 ```
 
-#### 方式二：Docker Build + Run
+#### 服务器部署
+
+镜像默认推送至阿里云 ACR：`crpi-sg3816vcnxzdwweb.cn-hangzhou.personal.cr.aliyuncs.com/myworkreport/workreport-ai`
+
+服务器上不需要源码，只需 `docker-compose.yml` 和 `.env` 两个文件。
 
 ```bash
-# 1. 构建镜像
-docker build -t workreport-ai .
+# 1. 创建工作目录
+mkdir -p ~/workreport-ai && cd ~/workreport-ai
 
-# 2. 运行容器
-docker run -d \
-  --name workreport-ai \
-  -p 8088:3000 \
-  --env-file .env \
-  -v $(pwd)/data:/app/data \
-  --restart unless-stopped \
-  workreport-ai
+# 2. 上传 docker-compose.yml（从本机 scp）
+scp docker-compose.yml user@<server-ip>:~/workreport-ai/
+
+# 3. 创建 .env 配置文件
+cat > .env << 'EOF'
+DATABASE_URL="file:./dev.db"
+OPENAI_API_KEY=sk-xxx
+OPENAI_API_BASE=https://api.deepseek.com
+OPENAI_MODEL=deepseek-v4-flash
+JWT_SECRET=<改成随机字符串>
+GITHUB_CLIENT_ID=xxx
+GITHUB_CLIENT_SECRET=xxx
+GITHUB_REDIRECT_URI=/api/oauth/callback/github
+EOF
+
+# 4. 登录阿里云 ACR（只需一次）
+docker login --username=<阿里云账号> crpi-sg3816vcnxzdwweb.cn-hangzhou.personal.cr.aliyuncs.com
+
+# 5. 设置镜像地址并启动
+export IMAGE=crpi-sg3816vcnxzdwweb.cn-hangzhou.personal.cr.aliyuncs.com/myworkreport/workreport-ai:latest
+docker compose up -d
+
+# 6. 查看日志
+docker compose logs -f
+
+# 7. 验证服务
+curl http://localhost:8088/api/data-sources
 ```
 
-#### 持久化
+**后续更新：**
 
-Docker 部署通过 volume 挂载持久化以下数据：
+```bash
+cd ~/workreport-ai
+docker compose pull && docker compose up -d
+```
 
-| 容器路径 | 宿主路径 | 说明 |
-|---------|---------|------|
-| `/app/data/db` | `./data/db` | SQLite 数据库文件 |
-| `/app/data/reports` | `./data/reports` | 生成的报告 .md 文件 |
+> `IMAGE` 环境变量指定镜像地址，支持任意仓库（阿里云 ACR、Docker Hub、私有仓库等）。不设置时默认使用 `workreport-ai:latest`（本地构建）。可将 `export IMAGE=...` 写入 `~/.bashrc` 永久生效。
 
-#### 生产环境注意事项
+#### 注意事项
 
 - **HTTPS**：GitHub OAuth 回调要求 HTTPS，建议在容器前加 Nginx 反向代理 + Let's Encrypt
-- **环境变量**：生产环境通过 `--env-file` 或 Docker Secrets 注入，不要将 `.env` 提交到代码仓库
-- **更新部署**：`git pull && docker compose up -d --build`
+- **端口**：默认映射 `8088:3000`，如需修改编辑 `docker-compose.yml`
+- **环境变量**：通过 `.env` 文件注入，不要将 `.env` 提交到代码仓库
 
 ### 本地开发部署
 

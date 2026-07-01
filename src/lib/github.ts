@@ -203,8 +203,8 @@ export async function listCommits(
   let page = 1;
   const perPage = 100;
 
-  // 最多拉取 3 页（300 条），避免超大仓库拖慢
-  while (page <= 3) {
+  // 最多拉取 10 页（1000 条），覆盖活跃仓库的足够范围
+  while (page <= 10) {
     const url = new URL(`${GITHUB_API}/repos/${owner}/${repo}/commits`);
     url.searchParams.set("per_page", String(perPage));
     url.searchParams.set("page", String(page));
@@ -225,6 +225,12 @@ export async function listCommits(
     if (res.status === 409) {
       // 409 Conflict — 空仓库
       return [];
+    }
+    if (res.status === 401) {
+      throw new Error("GitHub token 已过期或已撤销，请在数据源页面重新连接 GitHub");
+    }
+    if (res.status === 403) {
+      throw new Error("GitHub API 请求频率超限，请稍后再试");
     }
     if (!res.ok) {
       console.error(`[!] GitHub API /repos/${owner}/${repo}/commits failed: ${res.status}`);

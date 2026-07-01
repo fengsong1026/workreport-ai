@@ -5,11 +5,14 @@
  *
  * 请求体：
  *   { type: "weekly", week?, year?, month?, plugin?, allAuthors?, force?, dryRun? }
+ *
+ * 限流：每用户 10 次/小时
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { generateReportForUser } from "@/lib/generate";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 interface GenerateBody {
   type?: "daily" | "weekly" | "monthly";
@@ -27,7 +30,22 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
-  const body = (await req.json()) as GenerateBody;
+  // 速率限制（按用户 ID）
+  if (!checkRateLimit(`generate:${user.id}`, 10, 60 * 60_000)) {
+    return NextResponse.json(
+      { error: "报告生成过于频繁，请稍后再试" },
+      { status: 429 },
+    );
+  }
+
+  // 安全解析 JSON
+  let body: GenerateBody;
+  try {
+    body = (await req.json()) as GenerateBody;
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
+
   const reportType = body.type || "weekly";
 
   const result = await generateReportForUser(user.id, {
@@ -42,7 +60,6 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result.success) {
-    // 没有记录返回 404，其他错误返回 500
     const status = result.error?.includes("没有找到") ? 404 : 500;
     return NextResponse.json(
       {

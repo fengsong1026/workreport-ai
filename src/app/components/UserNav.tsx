@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { authFetch, removeToken } from "@/lib/auth-client";
 
 interface UserInfo {
   name: string;
@@ -10,16 +12,17 @@ interface UserInfo {
 /**
  * 导航栏用户区域
  *
- * 调用 /api/auth/me 获取当前登录状态：
+ * 调用 /api/auth/me 获取当前登录状态（通过 Authorization: Bearer 头）：
  * - 未登录：显示「登录」链接
- * - 已登录：显示用户名 + 「个人中心」+ 「退出」
+ * - 已登录：显示用户名 +「个人中心」+「退出」
  */
 export default function UserNav() {
+  const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/auth/me")
+    authFetch("/api/auth/me")
       .then((res) => {
         if (!res.ok) return null;
         return res.json();
@@ -32,9 +35,14 @@ export default function UserNav() {
   }, []);
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await authFetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // 网络错误时仍然清除本地状态
+    }
+    removeToken();
     setUser(null);
-    window.location.href = "/login";
+    router.push("/login");
   };
 
   if (loading) {

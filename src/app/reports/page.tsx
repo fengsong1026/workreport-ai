@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import ReactMarkdown from "react-markdown";
 import { useSearchParams } from "next/navigation";
+import AuthGuard from "@/app/components/AuthGuard";
+import { authFetch } from "@/lib/auth-client";
 
 interface ReportSummary {
   id: string;
@@ -20,9 +22,11 @@ interface ReportDetail extends ReportSummary {
 
 export default function ReportsPage() {
   return (
-    <Suspense fallback={<div className="text-gray-500">加载中...</div>}>
-      <ReportsContent />
-    </Suspense>
+    <AuthGuard>
+      <Suspense fallback={<div className="text-gray-500">加载中...</div>}>
+        <ReportsContent />
+      </Suspense>
+    </AuthGuard>
   );
 }
 
@@ -33,11 +37,12 @@ function ReportsContent() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [selected, setSelected] = useState<ReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const latestDetailId = useRef("");
 
   const loadReports = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/reports?limit=100");
+      const res = await authFetch("/api/reports?limit=100");
       if (res.ok) {
         const data = await res.json();
         setReports(data.reports || []);
@@ -50,9 +55,10 @@ function ReportsContent() {
   }, []);
 
   const loadDetail = useCallback(async (id: string) => {
+    latestDetailId.current = id;
     try {
-      const res = await fetch(`/api/reports?id=${id}`);
-      if (res.ok) {
+      const res = await authFetch(`/api/reports?id=${id}`);
+      if (res.ok && latestDetailId.current === id) {
         const data = await res.json();
         setSelected(data.report);
       }
@@ -73,7 +79,7 @@ function ReportsContent() {
   const handleDelete = async (id: string) => {
     if (!confirm("确定删除这份报告？")) return;
     try {
-      const res = await fetch(`/api/reports?id=${id}`, { method: "DELETE" });
+      const res = await authFetch(`/api/reports?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         loadReports();
         if (selected?.id === id) setSelected(null);

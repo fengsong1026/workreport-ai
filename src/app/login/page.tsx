@@ -2,11 +2,13 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { setToken, isSafeRedirect } from "@/lib/auth-client";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/dashboard";
+  const rawRedirect = searchParams.get("redirect") || "/dashboard";
+  const redirect = isSafeRedirect(rawRedirect) ? rawRedirect : "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,8 +28,9 @@ function LoginForm() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        setToken(data.token);
         router.push(redirect);
-        router.refresh();
       } else {
         const data = await res.json();
         setError(data.error || "登录失败");

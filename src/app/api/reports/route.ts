@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   const type = url.searchParams.get("type");
-  const limit = Number(url.searchParams.get("limit")) || 50;
+  const rawLimit = url.searchParams.get("limit");
+  const limit = rawLimit !== null
+    ? Math.min(Math.max(Number(rawLimit), 1), 200)
+    : 50;
 
   // 获取单个报告详情
   if (id) {

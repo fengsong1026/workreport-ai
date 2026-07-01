@@ -17,17 +17,15 @@ import { getProviderConfig, type OAuthProviderConfig } from "./oauth-providers";
  * 保证获取到的是用户实际访问的地址，而非容器内部地址。
  */
 export function getRequestOrigin(req: NextRequest): string {
+  // 优先使用 x-forwarded-host（仅当同时有 x-forwarded-proto 表明反向代理可信）
   const forwardedProto = req.headers.get("x-forwarded-proto");
   const forwardedHost = req.headers.get("x-forwarded-host");
-  const host = req.headers.get("host");
 
-  const finalHost = forwardedHost || host;
-  if (finalHost) {
-    const proto = forwardedProto || (finalHost.startsWith("localhost") ? "http" : "https");
-    return `${proto}://${finalHost}`;
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
   }
 
-  // 兜底：从请求 URL 解析
+  // 兜底：从请求 URL 解析（来自运行时，不受 Host 头伪造影响）
   return new URL(req.url).origin;
 }
 

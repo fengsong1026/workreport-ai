@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import AuthGuard from "@/app/components/AuthGuard";
+import { authFetch } from "@/lib/auth-client";
 
 interface Repo {
   id: number;
@@ -46,7 +48,7 @@ export default function DataSourcesPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/data-sources");
+      const res = await authFetch("/api/data-sources");
       if (res.ok) {
         const data = await res.json();
         setDataSources(data.plugins || []);
@@ -92,7 +94,7 @@ export default function DataSourcesPage() {
     setSyncing(true);
     setMessage({ type: "info", text: "正在从 GitHub 同步仓库列表..." });
     try {
-      const res = await fetch("/api/collect", {
+      const res = await authFetch("/api/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plugin: "git" }),
@@ -118,7 +120,7 @@ export default function DataSourcesPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/data-sources", {
+      const res = await authFetch("/api/data-sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -147,7 +149,7 @@ export default function DataSourcesPage() {
   const handleDisconnect = async () => {
     if (!confirm("确定断开 GitHub 连接？")) return;
     try {
-      await fetch("/api/data-sources", {
+      await authFetch("/api/data-sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "git", action: "disconnect" }),
@@ -162,7 +164,7 @@ export default function DataSourcesPage() {
   const handleDisconnectProvider = async (provider: Provider) => {
     if (!confirm(`确定断开 ${provider.displayName} 连接？`)) return;
     try {
-      await fetch("/api/data-sources", {
+      await authFetch("/api/data-sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: provider.name, action: "disconnect" }),
@@ -199,6 +201,7 @@ export default function DataSourcesPage() {
   };
 
   return (
+    <AuthGuard>
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold mb-2">数据源管理</h1>
@@ -526,5 +529,5 @@ export default function DataSourcesPage() {
         );
       })}
     </div>
-  );
+  </AuthGuard>);
 }

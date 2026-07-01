@@ -83,12 +83,14 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
-  const body = await req.json();
-  const { name, action, repos } = body as {
-    name: string;
-    action?: "select-repos" | "disconnect";
-    repos?: number[];
-  };
+  let body: { name?: string; action?: "select-repos" | "disconnect"; repos?: number[] };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
+
+  const { name, action, repos } = body;
 
   if (!name) {
     return NextResponse.json({ error: "缺少 name 参数" }, { status: 400 });
@@ -110,11 +112,16 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "select-repos" && name === "git") {
-    const cfg = JSON.parse(row.config) as {
+    let cfg: {
       token: string;
       user: { login: string; name: string | null; email: string | null };
       repos: Array<{ id: number; fullName: string; selected: boolean }>;
     };
+    try {
+      cfg = JSON.parse(row.config);
+    } catch {
+      return NextResponse.json({ error: "数据源配置损坏，请重新连接" }, { status: 500 });
+    }
 
     const selectedIds = new Set(repos || []);
     cfg.repos = cfg.repos.map((r) => ({

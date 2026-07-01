@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import AuthGuard from "@/app/components/AuthGuard";
+import { authFetch, removeToken } from "@/lib/auth-client";
 
 interface UserInfo {
   id: string;
@@ -39,7 +41,7 @@ export default function ProfilePage() {
   } | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/me")
+    authFetch("/api/auth/me")
       .then((res) => {
         if (!res.ok) throw new Error();
         return res.json();
@@ -59,7 +61,7 @@ export default function ProfilePage() {
     setNameMsg(null);
 
     try {
-      const res = await fetch("/api/auth/profile", {
+      const res = await authFetch("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editName }),
@@ -86,7 +88,7 @@ export default function ProfilePage() {
     setPwdMsg(null);
 
     try {
-      const res = await fetch("/api/auth/password", {
+      const res = await authFetch("/api/auth/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ oldPassword, newPassword }),
@@ -108,9 +110,9 @@ export default function ProfilePage() {
   };
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await authFetch("/api/auth/logout", { method: "POST" });
+    removeToken();
     router.push("/login");
-    router.refresh();
   };
 
   if (loading) {
@@ -122,6 +124,7 @@ export default function ProfilePage() {
   if (!user) return null;
 
   return (
+    <AuthGuard>
     <div className="max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">个人中心</h1>
 
@@ -240,5 +243,5 @@ export default function ProfilePage() {
         </button>
       </section>
     </div>
-  );
+  </AuthGuard>);
 }

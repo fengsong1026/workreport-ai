@@ -2,7 +2,6 @@
  * 日期/周数工具：计算 ISO 周区间、日报/周报/月报的时间范围
  */
 
-import { execFileSync } from "child_process";
 import { TimeRange } from "./models";
 
 /**
@@ -106,19 +105,4 @@ export function isoWeek(date: Date): { year: number; week: number } {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return { year: d.getUTCFullYear(), week };
-}
-
-/**
- * 从全局 git 配置自动检测当前用户邮箱
- */
-export function getGitUserEmail(): string {
-  try {
-    const email = execFileSync("git", ["config", "--global", "user.email"], {
-      encoding: "utf-8",
-      timeout: 5000,
-    }).trim();
-    return email;
-  } catch {
-    return "";
-  }
 }

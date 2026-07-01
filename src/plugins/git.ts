@@ -18,6 +18,7 @@ import {
   listUserRepos,
   type GitHubRepo,
 } from "@/lib/github";
+import { decryptToken } from "@/lib/crypto";
 
 const MAX_RECORDS_FOR_PROMPT = 300;
 
@@ -54,7 +55,13 @@ export class GitPlugin implements DataSourcePlugin {
     });
     if (!row || !row.connected) return null;
     try {
-      return JSON.parse(row.config) as GitDataSourceConfig;
+      const cfg = JSON.parse(row.config) as GitDataSourceConfig;
+      // 解密 token（兼容旧明文 token）
+      if (cfg.token) {
+        const decrypted = decryptToken(cfg.token);
+        if (decrypted !== null) cfg.token = decrypted;
+      }
+      return cfg;
     } catch {
       return null;
     }

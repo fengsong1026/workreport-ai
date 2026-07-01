@@ -10,6 +10,9 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { isoWeek } from "./dates";
 
+/** 简单的写队列，防止并发写入 JSONL 时交错。失败时自动重置。 */
+let writeQueue: Promise<void> = Promise.resolve();
+
 /**
  * 返回某插件的存储目录：data/sources/<pluginName>/
  */
@@ -50,12 +53,19 @@ export function appendRecords(
 
   for (const { path, items } of byWeek.values()) {
     mkdirSync(dirname(path), { recursive: true });
-    const existing = loadHashes(path, dedupField);
     for (const r of items) {
       const key = r[dedupField] as string | undefined;
-      if (key && existing.has(key)) continue;
-      appendFileSync(path, JSON.stringify(r) + "\n", "utf-8");
-      if (key) existing.add(key);
+      // 将去重检查 + 写入一并串行化，避免竞态
+      writeQueue = writeQueue
+        .then(() => {
+          const existing = loadHashes(path, dedupField);
+          if (key && existing.has(key)) return; // 已在文件中，跳过
+          appendFileSync(path, JSON.stringify(r) + "\n", "utf-8");
+        })
+        .catch(() => {
+          // 写入失败时重置队列，防止永久作废
+          writeQueue = Promise.resolve();
+        });
       written++;
     }
   }

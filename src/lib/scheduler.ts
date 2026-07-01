@@ -152,7 +152,7 @@ class Scheduler {
       throw new Error(`无效的 cron 表达式: ${cronExpr}`);
     }
     const task = cron.schedule(cronExpr, handler, {
-      timezone: "Asia/Shanghai",
+      timezone: process.env.TZ || "Asia/Shanghai",
     });
     this.jobs.set(name, task);
   }

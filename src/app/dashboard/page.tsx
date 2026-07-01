@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import AuthGuard from "@/app/components/AuthGuard";
+import { authFetch } from "@/lib/auth-client";
 
 interface DataSource {
   name: string;
@@ -35,8 +37,8 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const [dsRes, rptRes] = await Promise.all([
-        fetch("/api/data-sources"),
-        fetch("/api/reports?limit=5"),
+        authFetch("/api/data-sources"),
+        authFetch("/api/reports?limit=5"),
       ]);
       if (dsRes.ok) {
         const dsData = await dsRes.json();
@@ -61,7 +63,7 @@ export default function DashboardPage() {
     setGenerating(true);
     setMessage({ type: "info", text: `正在生成${type === "daily" ? "日报" : type === "weekly" ? "周报" : "月报"}...` });
     try {
-      const res = await fetch("/api/generate", {
+      const res = await authFetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, allAuthors: true }),
@@ -90,6 +92,7 @@ export default function DashboardPage() {
     t === "daily" ? "日报" : t === "weekly" ? "周报" : "月报";
 
   return (
+    <AuthGuard>
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold mb-2">仪表盘</h1>
@@ -228,5 +231,5 @@ export default function DashboardPage() {
         )}
       </section>
     </div>
-  );
+  </AuthGuard>);
 }

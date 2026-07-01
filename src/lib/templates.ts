@@ -58,7 +58,9 @@ export function loadTemplate(templatePath: string): string {
 export function fillTemplate(template: string, variables: Record<string, string | number>): string {
   let result = template;
   for (const [key, value] of Object.entries(variables)) {
-    result = result.replaceAll(`{{${key}}}`, String(value));
+    // 对 RECORDS 类变量转义 {{ 防止与模板占位符冲突
+    const safeValue = String(value).replaceAll("{{", "{\\{");
+    result = result.replaceAll(`{{${key}}}`, safeValue);
   }
   return result;
 }

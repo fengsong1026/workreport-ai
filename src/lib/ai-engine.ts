@@ -87,6 +87,7 @@ export async function callOpenAICompatibleApi(
     apiKey: config.apiKey,
     baseURL: config.apiBase,
     maxRetries: 2,
+    timeout: 60000,
   });
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];

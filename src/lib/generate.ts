@@ -7,7 +7,7 @@
  *   3. 保存到 DB + 本地 .md 文件
  */
 
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { getRegistry } from "./registry";
 import { getRange } from "./dates";
@@ -174,25 +174,33 @@ export async function generateReportForUser(
       };
     }
 
-    // 保存到数据库
-    const saved = await prisma.report.create({
-      data: {
-        type: reportType,
-        label: timeRange.label,
-        dateRange: timeRange.dateRangeStr,
-        recordCount: totalCount,
-        projectCount: totalProjects.size,
-        content: report,
-        userId,
-      },
-    });
-
-    // 同时保存到本地 .md 文件
+    // 先保存到本地 .md 文件，成功后再写 DB（避免孤儿记录）
     const reportsDir = join(process.cwd(), "data", "reports");
     mkdirSync(reportsDir, { recursive: true });
     const safeLabel = timeRange.label.replace(/\s+/g, "-").replace(/[()]/g, "");
     const filePath = join(reportsDir, `${reportType}-${safeLabel}.md`);
     writeFileSync(filePath, report, "utf-8");
+
+    let saved: { id: string };
+    try {
+      saved = await prisma.report.create({
+        data: {
+          type: reportType,
+          label: timeRange.label,
+          dateRange: timeRange.dateRangeStr,
+          recordCount: totalCount,
+          projectCount: totalProjects.size,
+          content: report,
+          userId,
+        },
+      });
+    } catch (dbError) {
+      // DB 写入失败 → 删除已写入的 .md 文件，避免不一致
+      try {
+        unlinkSync(filePath);
+      } catch { /* 文件可能不存在 */ }
+      throw dbError;
+    }
 
     return {
       success: true,

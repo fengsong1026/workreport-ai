@@ -20,6 +20,7 @@ import {
 import { getProviderConfig } from "@/lib/oauth-providers";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { encryptToken } from "@/lib/crypto";
 
 export async function GET(
   req: NextRequest,
@@ -29,7 +30,7 @@ export async function GET(
   const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.redirect(
-      new URL("/login?redirect=/data-sources", req.url),
+      new URL("/login?redirect=/data-sources", getRequestOrigin(req)),
     );
   }
 
@@ -38,7 +39,7 @@ export async function GET(
 
   if (!providerConfig) {
     return NextResponse.redirect(
-      new URL(`/data-sources?error=unknown_provider`, req.url),
+      new URL(`/data-sources?error=unknown_provider`, getRequestOrigin(req)),
     );
   }
 
@@ -50,13 +51,13 @@ export async function GET(
   // 用户拒绝授权
   if (error) {
     return NextResponse.redirect(
-      new URL(`/data-sources?error=oauth_denied`, req.url),
+      new URL(`/data-sources?error=oauth_denied`, getRequestOrigin(req)),
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL(`/data-sources?error=missing_params`, req.url),
+      new URL(`/data-sources?error=missing_params`, getRequestOrigin(req)),
     );
   }
 
@@ -64,7 +65,7 @@ export async function GET(
   const cookieState = req.cookies.get(`oauth_state_${provider}`)?.value;
   if (!cookieState || cookieState !== state) {
     return NextResponse.redirect(
-      new URL(`/data-sources?error=state_mismatch`, req.url),
+      new URL(`/data-sources?error=state_mismatch`, getRequestOrigin(req)),
     );
   }
 
@@ -75,9 +76,9 @@ export async function GET(
     // 换 token
     const token = await exchangeCodeForToken(provider, oauthCfg, code);
 
-    // 存入 DB：每个 provider 一条 DataSource 记录
+    // 存入 DB：每个 provider 一条 DataSource 记录（token 加密存储）
     const dbConfig = JSON.stringify({
-      token,
+      token: encryptToken(token),
       connectedAt: new Date().toISOString(),
     });
 
@@ -99,7 +100,7 @@ export async function GET(
 
     // 清除 state cookie 并重定向
     const response = NextResponse.redirect(
-      new URL(`/data-sources?connected=${provider}`, req.url),
+      new URL(`/data-sources?connected=${provider}`, getRequestOrigin(req)),
     );
     response.cookies.delete(`oauth_state_${provider}`);
     return response;

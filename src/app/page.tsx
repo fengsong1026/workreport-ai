@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isAuthenticated, authFetch } from "@/lib/auth-client";
 
 /**
  * 公开落地页（无需登录）
@@ -14,7 +15,12 @@ export default function LandingPage() {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/me")
+    if (!isAuthenticated()) {
+      setChecked(true);
+      return;
+    }
+
+    authFetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
       .then((d) => setLoggedIn(!!d?.user))
       .catch(() => {})

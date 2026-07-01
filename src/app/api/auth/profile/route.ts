@@ -14,9 +14,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   }
 
-  const { name } = await req.json();
+  let body: { name?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
+
+  const { name } = body;
   if (!name || !name.trim()) {
     return NextResponse.json({ error: "缺少 name" }, { status: 400 });
+  }
+
+  if (name.trim().length > 100) {
+    return NextResponse.json({ error: "用户名最长 100 个字符" }, { status: 400 });
   }
 
   const updated = await prisma.user.update({

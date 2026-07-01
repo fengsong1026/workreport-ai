@@ -22,7 +22,13 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
-  const body = (await req.json()) as CollectBody;
+  let body: CollectBody;
+  try {
+    body = (await req.json()) as CollectBody;
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
+
   const pluginName = body.plugin || "git";
 
   const registry = getRegistry();

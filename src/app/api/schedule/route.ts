@@ -40,12 +40,17 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
-  const body = (await req.json()) as {
+  let body: {
     name?: string;
     schedule?: string;
     reportType?: string;
     plugin?: string;
   };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
 
   // 校验
   const name = body.name?.trim();
@@ -54,6 +59,9 @@ export async function POST(req: NextRequest) {
 
   if (!name) {
     return NextResponse.json({ error: "任务名称不能为空" }, { status: 400 });
+  }
+  if (name.length > 200) {
+    return NextResponse.json({ error: "任务名称最长 200 个字符" }, { status: 400 });
   }
   if (!schedule) {
     return NextResponse.json({ error: "调度时间不能为空" }, { status: 400 });

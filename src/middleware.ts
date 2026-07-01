@@ -1,8 +1,9 @@
 /**
  * 认证中间件
  *
- * 保护所有页面和 API（除了 /login, /register, /api/auth/*）。
- * 验证 JWT cookie，未登录则重定向到登录页或返回 401。
+ * 页面路由全部放行（由客户端 AuthGuard 保护）。
+ * API 路由通过 Authorization: Bearer 头验证 JWT。
+ * /api/auth/* 和 /api/health 为公开 API。
  *
  * 运行在 Edge Runtime，只验证 JWT 签名，不查数据库。
  */
@@ -10,20 +11,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const COOKIE_NAME = "wr_session";
-const PUBLIC_PAGES = ["/", "/login", "/register"];
-const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/health"];
+const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/health", "/api/oauth/"];
 
 function getSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET || "dev-secret-change-me";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET 未设置，生产环境必须配置 JWT_SECRET 环境变量");
+    }
+    return new TextEncoder().encode("dev-secret-change-me");
+  }
   return new TextEncoder().encode(secret);
+}
+
+// 与 lib/auth.ts 中 extractBearerToken 逻辑一致。
+// 重复实现在此是因为 middleware 运行在 Edge Runtime，不能 import Node.js 模块。
+function extractBearerToken(req: NextRequest): string | null {
+  const auth = req.headers.get("authorization");
+  if (!auth) return null;
+  const parts = auth.split(" ");
+  if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer") return null;
+  return parts[1] || null;
 }
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 放行公开页面
-  if (PUBLIC_PAGES.includes(pathname)) {
+  // 页面路由全部放行（客户端 AuthGuard 负责保护）
+  if (!pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
 
@@ -33,34 +48,24 @@ export async function middleware(req: NextRequest) {
   }
 
   // 验证 JWT
-  const token = req.cookies.get(COOKIE_NAME)?.value;
+  const token = extractBearerToken(req);
 
   if (!token) {
-    return handleUnauth(req);
-  }
-
-  try {
-    await jwtVerify(token, getSecret());
-    return NextResponse.next();
-  } catch {
-    return handleUnauth(req);
-  }
-}
-
-function handleUnauth(req: NextRequest): NextResponse {
-  const { pathname } = req.nextUrl;
-
-  if (pathname.startsWith("/api/")) {
     return NextResponse.json(
       { error: "未登录或登录已过期" },
       { status: 401 },
     );
   }
 
-  // 页面重定向到登录
-  const loginUrl = new URL("/login", req.url);
-  loginUrl.searchParams.set("redirect", pathname);
-  return NextResponse.redirect(loginUrl);
+  try {
+    await jwtVerify(token, getSecret());
+    return NextResponse.next();
+  } catch {
+    return NextResponse.json(
+      { error: "未登录或登录已过期" },
+      { status: 401 },
+    );
+  }
 }
 
 export const config = {

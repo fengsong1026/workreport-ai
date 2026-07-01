@@ -15,13 +15,14 @@ import { exchangeCodeForToken, getAuthenticatedUser, getGitHubOAuthConfig } from
 import { getRequestOrigin } from "@/lib/oauth";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { encryptToken } from "@/lib/crypto";
 
 export async function GET(req: NextRequest) {
   // OAuth 回调必须有关联的登录用户
   const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.redirect(
-      new URL("/login?redirect=/data-sources", req.url),
+      new URL("/login?redirect=/data-sources", getRequestOrigin(req)),
     );
   }
 
@@ -33,13 +34,13 @@ export async function GET(req: NextRequest) {
   // 用户拒绝授权
   if (error) {
     return NextResponse.redirect(
-      new URL("/data-sources?error=oauth_denied", req.url),
+      new URL("/data-sources?error=oauth_denied", getRequestOrigin(req)),
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL("/data-sources?error=missing_params", req.url),
+      new URL("/data-sources?error=missing_params", getRequestOrigin(req)),
     );
   }
 
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
   const cookieState = req.cookies.get("github_oauth_state")?.value;
   if (!cookieState || cookieState !== state) {
     return NextResponse.redirect(
-      new URL("/data-sources?error=state_mismatch", req.url),
+      new URL("/data-sources?error=state_mismatch", getRequestOrigin(req)),
     );
   }
 
@@ -66,9 +67,9 @@ export async function GET(req: NextRequest) {
     // 获取 GitHub 用户信息
     const ghUser = await getAuthenticatedUser(token);
 
-    // 存入 DB
+    // 存入 DB（token 加密存储）
     const config = JSON.stringify({
-      token,
+      token: encryptToken(token),
       user: {
         login: ghUser.login,
         name: ghUser.name,
@@ -95,7 +96,7 @@ export async function GET(req: NextRequest) {
 
     // 清除 state cookie 并重定向
     const response = NextResponse.redirect(
-      new URL("/data-sources?connected=github", req.url),
+      new URL("/data-sources?connected=github", getRequestOrigin(req)),
     );
     response.cookies.delete("github_oauth_state");
     return response;
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[!] GitHub OAuth 回调失败:", msg);
     return NextResponse.redirect(
-      new URL(`/data-sources?error=oauth_failed&msg=${encodeURIComponent(msg)}`, req.url),
+      new URL(`/data-sources?error=oauth_failed&msg=${encodeURIComponent(msg)}`, getRequestOrigin(req)),
     );
   }
 }

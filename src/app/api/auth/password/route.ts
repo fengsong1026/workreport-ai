@@ -14,7 +14,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   }
 
-  const { oldPassword, newPassword } = await req.json();
+  let body: { oldPassword?: string; newPassword?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
+
+  const { oldPassword, newPassword } = body;
   if (!oldPassword || !newPassword) {
     return NextResponse.json(
       { error: "缺少 oldPassword 或 newPassword" },
@@ -22,9 +29,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (newPassword.length < 6) {
+  if (newPassword.length < 8) {
     return NextResponse.json(
-      { error: "新密码至少 6 位" },
+      { error: "新密码至少 8 位" },
       { status: 400 },
     );
   }

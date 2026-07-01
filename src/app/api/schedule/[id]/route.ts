@@ -31,12 +31,17 @@ export async function PATCH(
     return NextResponse.json({ error: "任务不存在" }, { status: 404 });
   }
 
-  const body = (await req.json()) as {
+  let body: {
     enabled?: boolean;
     schedule?: string;
     reportType?: string;
     plugin?: string;
   };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
+  }
 
   // 构建更新数据
   const updateData: Record<string, unknown> = {};

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import AuthGuard from "@/app/components/AuthGuard";
+import { authFetch } from "@/lib/auth-client";
 
 interface Task {
   id: string;
@@ -41,7 +43,7 @@ export default function SchedulePage() {
   const loadTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/schedule");
+      const res = await authFetch("/api/schedule");
       if (res.ok) {
         const data = await res.json();
         setTasks(data.tasks || []);
@@ -63,7 +65,7 @@ export default function SchedulePage() {
     setMessage(null);
 
     try {
-      const res = await fetch("/api/schedule", {
+      const res = await authFetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -92,7 +94,7 @@ export default function SchedulePage() {
 
   const handleToggle = async (task: Task) => {
     try {
-      const res = await fetch(`/api/schedule/${task.id}`, {
+      const res = await authFetch(`/api/schedule/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !task.enabled }),
@@ -109,7 +111,7 @@ export default function SchedulePage() {
     if (!confirm(`确认删除任务"${task.name}"？`)) return;
 
     try {
-      const res = await fetch(`/api/schedule/${task.id}`, { method: "DELETE" });
+      const res = await authFetch(`/api/schedule/${task.id}`, { method: "DELETE" });
       if (res.ok) {
         setMessage({ type: "success", text: `任务"${task.name}"已删除` });
         loadTasks();
@@ -120,6 +122,7 @@ export default function SchedulePage() {
   };
 
   return (
+    <AuthGuard>
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold mb-2">定时调度</h1>
@@ -284,5 +287,5 @@ export default function SchedulePage() {
         )}
       </section>
     </div>
-  );
+  </AuthGuard>);
 }

@@ -12,12 +12,19 @@ export async function GET() {
     await prisma.$queryRaw`SELECT 1`;
     dbOk = true;
   } catch {
-    // DB 不可用时仍返回 200，但标记 db 状态为 false
+    // DB 不可用时返回 503
+  }
+
+  if (!dbOk) {
+    return NextResponse.json(
+      { status: "error", timestamp: new Date().toISOString(), db: false },
+      { status: 503 },
+    );
   }
 
   return NextResponse.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-    db: dbOk,
+    db: true,
   });
 }
