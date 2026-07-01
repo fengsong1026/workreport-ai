@@ -25,7 +25,7 @@ docker compose up -d
 # Wait for health check
 echo "==> Waiting for service to be healthy..."
 for i in $(seq 1 30); do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/api/health 2>/dev/null || echo "000")
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8088/api/health 2>/dev/null || echo "000")
   if [ "${STATUS}" = "200" ]; then
     echo "==> Health check passed (HTTP ${STATUS})"
     break
