@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-# 确保数据目录存在
+# Ensure data directories exist
 mkdir -p /app/data/db /app/data/reports
 
-# 初始化/同步数据库 schema
+# Initialize / sync database schema
 npx prisma db push --skip-generate
 
-# 启动 Next.js 生产服务器
-exec npm start
+# Start Next.js production server
+exec npm start -- -H 0.0.0.0

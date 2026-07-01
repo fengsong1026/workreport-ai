@@ -1,7 +1,9 @@
 node_modules
 .next
 .git
-*.md
+.claude
+Dockerfile
+docker-compose.yml
 .env*
 data
 dev.db

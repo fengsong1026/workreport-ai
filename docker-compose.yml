@@ -1,7 +1,6 @@
 services:
   workreport-ai:
-    build: .
-    image: workreport-ai:latest
+    image: crpi-sg3816vcnxzdwweb.cn-hangzhou.personal.cr.aliyuncs.com/myworkreport/workreport-ai:latest
     container_name: workreport-ai
     restart: unless-stopped
     ports:
@@ -9,12 +8,10 @@ services:
     env_file:
       - .env
     volumes:
-      # SQLite 数据库持久化
       - ./data/db:/app/data/db
-      # 生成的报告持久化
       - ./data/reports:/app/data/reports
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/data-sources"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/data-sources', r => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
       timeout: 5s
       retries: 3
