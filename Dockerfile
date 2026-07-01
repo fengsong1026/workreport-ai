@@ -51,13 +51,9 @@ COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 # Create persistent data directories
-RUN mkdir -p /app/data/db /app/data/reports && \
-    chown -R node:node /app/data/db /app/data/reports
+RUN mkdir -p /app/data/db /app/data/reports
 
 EXPOSE 3000
 ENV PORT=3000
-
-# Run as non-root user
-USER node
 
 CMD ["./docker-entrypoint.sh"]
