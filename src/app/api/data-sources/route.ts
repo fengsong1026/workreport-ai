@@ -1,8 +1,7 @@
 /**
  * 数据源管理 API
- *
- * GET  /api/data-sources          列出所有数据源插件 + 连接状态
- * POST /api/data-sources          更新数据源配置（仓库选择 / 断开连接）
+ * GET  /api/data-sources  列出所有数据源插件 + 连接状态
+ * POST /api/data-sources  更新数据源配置（仓库选择 / 断开连接）
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -10,6 +9,7 @@ import { getRegistry } from "@/lib/registry";
 import { prisma } from "@/lib/prisma";
 import { OAUTH_PROVIDERS } from "@/lib/oauth-providers";
 import { requireUser } from "@/lib/auth";
+import { DataSourcesPostSchema, parseBody } from "@/lib/schemas";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser(req);
@@ -25,18 +25,12 @@ export async function GET(req: NextRequest) {
     available: p.meta.isAvailable,
   }));
 
-  // 读取 DB 中的连接状态（仅当前用户）
-  const dsRows = await prisma.dataSource.findMany({
-    where: { userId: user.id },
-  });
+  const dsRows = await prisma.dataSource.findMany({ where: { userId: user.id } });
   const connections = new Map(dsRows.map((r) => [r.name, r]));
 
-  // 为每个插件附加连接信息
   const result = plugins.map((p) => {
     const conn = connections.get(p.name);
-    if (!conn) {
-      return { ...p, connected: false };
-    }
+    if (!conn) return { ...p, connected: false };
 
     let extra: Record<string, unknown> = {};
     if (p.name === "git" && conn.connected) {
@@ -51,27 +45,16 @@ export async function GET(req: NextRequest) {
           selectedRepoCount: cfg.repos?.filter((r) => r.selected).length || 0,
           repos: cfg.repos || [],
         };
-      } catch {
-        // config 解析失败，忽略
-      }
+      } catch { /* config 解析失败，忽略 */ }
     }
-
-    return {
-      ...p,
-      connected: conn.connected,
-      ...extra,
-    };
+    return { ...p, connected: conn.connected, ...extra };
   });
 
-  // 所有 OAuth provider 的连接状态（不含 github，github 走专用路由在 plugins 里）
   const providers = Object.values(OAUTH_PROVIDERS).map((cfg) => {
     const conn = connections.get(cfg.name);
     return {
-      name: cfg.name,
-      displayName: cfg.displayName,
-      plugin: cfg.plugin,
-      connected: conn?.connected || false,
-      special: cfg.special || false,
+      name: cfg.name, displayName: cfg.displayName, plugin: cfg.plugin,
+      connected: conn?.connected || false, special: cfg.special || false,
       docsUrl: cfg.docsUrl || null,
     };
   });
@@ -83,18 +66,17 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
-  let body: { name?: string; action?: "select-repos" | "disconnect"; repos?: number[] };
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
   }
 
-  const { name, action, repos } = body;
+  const parsed = parseBody(DataSourcesPostSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!name) {
-    return NextResponse.json({ error: "缺少 name 参数" }, { status: 400 });
-  }
+  const { name, action, repos } = parsed.data;
 
   const row = await prisma.dataSource.findUnique({
     where: { userId_name: { userId: user.id, name } },
@@ -124,10 +106,7 @@ export async function POST(req: NextRequest) {
     }
 
     const selectedIds = new Set(repos || []);
-    cfg.repos = cfg.repos.map((r) => ({
-      ...r,
-      selected: selectedIds.has(r.id),
-    }));
+    cfg.repos = cfg.repos.map((r) => ({ ...r, selected: selectedIds.has(r.id) }));
 
     await prisma.dataSource.update({
       where: { userId_name: { userId: user.id, name } },
@@ -135,9 +114,7 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({
-      success: true,
-      message: `已选择 ${selectedIds.size} 个仓库`,
-      selectedCount: selectedIds.size,
+      success: true, message: `已选择 ${selectedIds.size} 个仓库`, selectedCount: selectedIds.size,
     });
   }
 

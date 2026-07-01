@@ -1,11 +1,7 @@
 /**
  * 定时任务管理 API
- *
- * GET  /api/schedule        列出当前用户的所有定时任务
- * POST /api/schedule        创建新的定时任务
- *
- * 请求体（POST）：
- *   { name: "周五周报", schedule: "Fri 17:00", reportType: "weekly", plugin?: "git" }
+ * GET  /api/schedule   列出当前用户的所有定时任务
+ * POST /api/schedule   创建新的定时任务
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,24 +9,15 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { parseSchedule, isValidCron } from "@/lib/scheduler";
 import { startScheduledTask } from "@/lib/scheduler-runner";
+import { ScheduleCreateSchema, parseBody } from "@/lib/schemas";
 
 export async function GET(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
   const tasks = await prisma.scheduledTask.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      schedule: true,
-      cronExpr: true,
-      reportType: true,
-      enabled: true,
-      plugin: true,
-      createdAt: true,
-    },
+    where: { userId: user.id }, orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, schedule: true, cronExpr: true, reportType: true, enabled: true, plugin: true, createdAt: true },
   });
 
   return NextResponse.json({ tasks });
@@ -40,35 +27,17 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (user instanceof NextResponse) return user;
 
-  let body: {
-    name?: string;
-    schedule?: string;
-    reportType?: string;
-    plugin?: string;
-  };
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
   }
 
-  // 校验
-  const name = body.name?.trim();
-  const schedule = body.schedule?.trim();
-  const reportType = (body.reportType || "weekly") as "daily" | "weekly" | "monthly";
+  const parsed = parseBody(ScheduleCreateSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!name) {
-    return NextResponse.json({ error: "任务名称不能为空" }, { status: 400 });
-  }
-  if (name.length > 200) {
-    return NextResponse.json({ error: "任务名称最长 200 个字符" }, { status: 400 });
-  }
-  if (!schedule) {
-    return NextResponse.json({ error: "调度时间不能为空" }, { status: 400 });
-  }
-  if (!["daily", "weekly", "monthly"].includes(reportType)) {
-    return NextResponse.json({ error: "报告类型无效" }, { status: 400 });
-  }
+  const { name, schedule, reportType, plugin } = parsed.data;
 
   // 解析 schedule → cron
   let cronExpr: string;
@@ -93,30 +62,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "任务名称已存在" }, { status: 409 });
   }
 
-  // 保存到 DB
   const task = await prisma.scheduledTask.create({
-    data: {
-      name,
-      schedule,
-      cronExpr,
-      reportType,
-      enabled: true,
-      plugin: body.plugin?.trim() || null,
-      userId: user.id,
-    },
+    data: { name, schedule, cronExpr, reportType, enabled: true, plugin: plugin?.trim() || null, userId: user.id },
   });
 
-  // 注册到 cron 调度器
   startScheduledTask({
-    id: task.id,
-    name: task.name,
-    cronExpr: task.cronExpr,
-    reportType: task.reportType,
-    plugin: task.plugin,
-    userId: task.userId,
+    id: task.id, name: task.name, cronExpr: task.cronExpr,
+    reportType: task.reportType, plugin: task.plugin, userId: task.userId,
   });
 
   console.log(`[调度] 用户 ${user.email} 创建任务 "${name}" — ${schedule} (${cronExpr})`);
-
   return NextResponse.json({ task }, { status: 201 });
 }

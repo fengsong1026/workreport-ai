@@ -2,7 +2,7 @@
  * 登录 API
  * POST /api/auth/login
  * body: { email, password }
- * 返回 token，客户端存储在 localStorage
+ * 返回 token + 设置 auth_token cookie，客户端存储 token 到 localStorage
  *
  * 限流：同一邮箱 5 次/15 分钟
  */
@@ -10,25 +10,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword, signToken, setAuthCookie } from "@/lib/auth";
-import { checkRateLimit, resetRateLimit, getRemainingAttempts } from "@/lib/rate-limit";
+import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
+import { LoginSchema, parseBody } from "@/lib/schemas";
 
 export async function POST(req: NextRequest) {
-  // 安全解析 JSON
-  let body: { email?: string; password?: string };
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "无效的请求体" }, { status: 400 });
   }
 
-  const { email, password } = body;
+  const parsed = parseBody(LoginSchema, body);
+  if (!parsed.success) return parsed.response;
 
-  if (!email || !password) {
-    return NextResponse.json(
-      { error: "缺少邮箱或密码" },
-      { status: 400 },
-    );
-  }
+  const { email, password } = parsed.data;
 
   // 速率限制
   if (!checkRateLimit(`login:${email}`, 5, 15 * 60_000)) {
