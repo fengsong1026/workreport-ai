@@ -12,7 +12,7 @@ import { jwtVerify } from "jose";
 
 const COOKIE_NAME = "wr_session";
 const PUBLIC_PAGES = ["/", "/login", "/register"];
-const PUBLIC_API_PREFIX = "/api/auth/";
+const PUBLIC_API_PREFIXES = ["/api/auth/", "/api/health"];
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET || "dev-secret-change-me";
@@ -28,7 +28,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // 放行公开 API
-  if (pathname.startsWith(PUBLIC_API_PREFIX)) {
+  if (PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return NextResponse.next();
   }
 
