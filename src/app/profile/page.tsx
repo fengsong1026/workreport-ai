@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AuthGuard from "@/app/components/AuthGuard";
-import { authFetch, removeToken } from "@/lib/auth-client";
+import { authFetch, removeToken, notifyLogout } from "@/lib/auth-client";
 
 interface UserInfo {
   id: string;
@@ -112,6 +112,7 @@ export default function ProfilePage() {
   const handleLogout = async () => {
     await authFetch("/api/auth/logout", { method: "POST" });
     removeToken();
+    notifyLogout();
     router.push("/login");
   };
 
@@ -213,13 +214,13 @@ export default function ProfilePage() {
             />
           </div>
           <div>
-            <label className="block text-sm mb-1">新密码（至少 6 位）</label>
+            <label className="block text-sm mb-1">新密码（至少 8 位）</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>

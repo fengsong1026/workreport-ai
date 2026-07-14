@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { setToken, isSafeRedirect } from "@/lib/auth-client";
+import { setToken, isSafeRedirect, isAuthenticated, notifyLogin } from "@/lib/auth-client";
 
 function RegisterForm() {
   const router = useRouter();
@@ -15,6 +15,13 @@ function RegisterForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // 已登录用户访问 /register 时直接跳转
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.replace(redirect);
+    }
+  }, [router, redirect]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +38,9 @@ function RegisterForm() {
       if (res.ok) {
         const data = await res.json();
         setToken(data.token);
-        router.push(redirect);
+        // 通知 UserNav 刷新用户状态
+        notifyLogin();
+        router.replace(redirect);
       } else {
         const data = await res.json();
         setError(data.error || "注册失败");
@@ -74,14 +83,14 @@ function RegisterForm() {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
-            密码（至少 6 位）
+            密码（至少 8 位）
           </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={8}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
           />
         </div>

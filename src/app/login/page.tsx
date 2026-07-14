@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { setToken, isSafeRedirect } from "@/lib/auth-client";
+import { setToken, isSafeRedirect, isAuthenticated, notifyLogin } from "@/lib/auth-client";
 
 function LoginForm() {
   const router = useRouter();
@@ -14,6 +14,13 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // 已登录用户访问 /login 时直接跳转，避免重复登录
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.replace(redirect);
+    }
+  }, [router, redirect]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +37,10 @@ function LoginForm() {
       if (res.ok) {
         const data = await res.json();
         setToken(data.token);
-        router.push(redirect);
+        // 通知 UserNav（在 root layout 中，不会随路由切换重新挂载）刷新用户状态
+        notifyLogin();
+        // replace 避免登录页进入历史栈，按返回键不会回到登录页
+        router.replace(redirect);
       } else {
         const data = await res.json();
         setError(data.error || "登录失败");

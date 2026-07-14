@@ -4,10 +4,16 @@
  * Token 存储在 localStorage，通过 Authorization: Bearer 头发送。
  * authFetch 在收到 401 时自动清除 token 并派发 auth:unauthorized 事件，
  * AuthGuard 监听到该事件后通过 router 重定向到登录页。
+ *
+ * 登录/注册成功后调用 notifyLogin() 派发 auth:login 事件，
+ * UserNav（位于 root layout，客户端导航不重新挂载）监听该事件以刷新用户状态。
+ * 登出时调用 notifyLogout() 派发 auth:logout 事件，同步清除 UI。
  */
 
 const TOKEN_KEY = "wr_token";
 const UNAUTHORIZED_EVENT = "auth:unauthorized";
+const LOGIN_EVENT = "auth:login";
+const LOGOUT_EVENT = "auth:logout";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -67,7 +73,19 @@ export function authFetch(
   });
 }
 
-export { UNAUTHORIZED_EVENT };
+/** 登录/注册成功后调用：派发 auth:login 事件，通知 UserNav 等组件刷新 */
+export function notifyLogin(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(LOGIN_EVENT));
+}
+
+/** 登出后调用：派发 auth:logout 事件，通知 UserNav 等组件清除用户状态 */
+export function notifyLogout(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(LOGOUT_EVENT));
+}
+
+export { UNAUTHORIZED_EVENT, LOGIN_EVENT, LOGOUT_EVENT };
 
 /** 校验 redirect 参数是否为同源路径，防止 open redirect */
 export function isSafeRedirect(path: string): boolean {

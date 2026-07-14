@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { authFetch, removeToken } from "@/lib/auth-client";
+import {
+  authFetch,
+  removeToken,
+  notifyLogout,
+  LOGIN_EVENT,
+  LOGOUT_EVENT,
+  UNAUTHORIZED_EVENT,
+} from "@/lib/auth-client";
 
 interface UserInfo {
   name: string;
@@ -12,26 +19,56 @@ interface UserInfo {
 /**
  * 导航栏用户区域
  *
- * 调用 /api/auth/me 获取当前登录状态（通过 Authorization: Bearer 头）：
- * - 未登录：显示「登录」链接
- * - 已登录：显示用户名 +「个人中心」+「退出」
+ * 位于 root layout — 客户端路由切换时本组件不会重新挂载，
+ * 因此 useEffect([]) 只在首次加载时跑一次。
+ * 登录/注册成功后由 login/register 页派发 auth:login 事件，
+ * 本组件监听该事件重新拉取 /api/auth/me，刷新右上角用户状态。
+ * 登出/401 时派发 auth:logout，本组件同步清除 UI。
  */
 export default function UserNav() {
   const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const loadUser = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/auth/me");
+      if (!res.ok) {
+        setUser(null);
+        return;
+      }
+      const data = await res.json();
+      if (data?.user) setUser(data.user);
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    authFetch("/api/auth/me")
-      .then((res) => {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then((data) => {
-        if (data?.user) setUser(data.user);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    loadUser();
+  }, [loadUser]);
+
+  // 监听登录事件：login/register 成功后重新拉取用户信息
+  useEffect(() => {
+    const handler = () => {
+      setLoading(true);
+      loadUser();
+    };
+    window.addEventListener(LOGIN_EVENT, handler);
+    return () => window.removeEventListener(LOGIN_EVENT, handler);
+  }, [loadUser]);
+
+  // 监听登出/401 事件：同步清除 UI
+  useEffect(() => {
+    const handler = () => setUser(null);
+    window.addEventListener(LOGOUT_EVENT, handler);
+    window.addEventListener(UNAUTHORIZED_EVENT, handler);
+    return () => {
+      window.removeEventListener(LOGOUT_EVENT, handler);
+      window.removeEventListener(UNAUTHORIZED_EVENT, handler);
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -42,6 +79,8 @@ export default function UserNav() {
     }
     removeToken();
     setUser(null);
+    // 通知其他组件（如 AuthGuard 所在页面）清除登录态
+    notifyLogout();
     router.push("/login");
   };
 
