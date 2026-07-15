@@ -11,10 +11,14 @@ WorkReport AI is a plugin-based platform that auto-generates work reports (daily
 ## Common commands
 
 ```bash
-npm run dev                                      # start dev server
+npm run dev                                      # start dev server on port 8907
 npm run build                                    # production build
+npm run test                                     # run tests (vitest run)
+npm run test:watch                               # run tests in watch mode
+npm run check                                    # full CI check: tsc + lint + test + build
 npx tsc --noEmit                                 # type-check without emitting
 npx prisma db push                               # push schema without migration
+npx prisma db migrate                            # run Prisma migrations (for schema changes)
 npx prisma studio                                # DB GUI
 
 # Docker
@@ -28,6 +32,10 @@ curl <host>/api/data-sources -H 'Authorization: Bearer <token>'
 curl -X POST <host>/api/generate -H 'Content-Type: application/json' -H 'Authorization: Bearer <token>' -d '{"type":"weekly","allAuthors":true,"dryRun":true}'
 ```
 
+### Pre-commit hooks
+
+Husky + lint-staged: on `git commit`, runs `tsc --noEmit` then `eslint --fix` on staged `.ts/.tsx` files. Configured in `.husky/pre-commit` and `.lintstagedrc.json`.
+
 ## Architecture
 
 ### Auth system (token-based, no cookies)
@@ -38,7 +46,7 @@ curl -X POST <host>/api/generate -H 'Content-Type: application/json' -H 'Authori
 - **`src/lib/rate-limit.ts`** — in-memory rate limiter used by login (5/15min), register (3/15min), generate (10/hour).
 - **`src/lib/crypto.ts`** — AES-256-GCM encrypt/decrypt for OAuth tokens at rest in SQLite.
 - **`src/app/components/AuthGuard.tsx`** — client component wrapping protected pages. Checks `isAuthenticated()` on mount, listens for `auth:unauthorized` events, redirects to `/login` via `router.push()`.
-- **`src/middleware.ts`** — Edge runtime. All page routes pass through (client AuthGuard protects them). API routes (`/api/*`) check `Authorization: Bearer` header. Public API prefixes: `/api/auth/`, `/api/health`, `/api/oauth/`.
+- **`src/middleware.ts`** — Edge runtime. All page routes pass through (client AuthGuard protects them). API routes (`/api/*`) check `Authorization: Bearer` header via `jose.jwtVerify()`. Public API prefixes: `/api/auth/`, `/api/health`, `/api/oauth/`.
 - Login/register return `{ user, token }` in JSON body. Client stores token then does `router.push()`.
 
 ### Data flow
@@ -58,21 +66,28 @@ report generation ──► plugin.read() calls GitHub Commits API ──► Wor
 ### Key modules
 
 - **`src/lib/plugin.ts`** — `DataSourcePlugin` interface: `collect()`, `read()`, `formatForPrompt()`, `stats()`. `PluginMeta` for metadata.
-- **`src/lib/registry.ts`** — explicit singleton plugin registry (no dynamic imports).
+- **`src/lib/registry.ts`** — explicit singleton plugin registry (no dynamic imports). All plugin factories listed in `PLUGIN_FACTORIES` array.
+- **`src/lib/models.ts`** — shared types: `WorkRecord` (source/timestamp/title/detail/project/author/email/raw), `PluginMeta` class, `TimeRange` class.
+- **`src/lib/dates.ts`** — ISO week/day/month range calculation: `getWeekRange()`, `getDayRange()`, `getMonthRange()`, `getRange()`.
 - **`src/lib/ai-engine.ts`** — shared AI engine. Template fill → prompt → OpenAI-compatible `/v1/chat/completions`. Config priority: DB > env var > defaults. Has 60s timeout.
+- **`src/lib/generate.ts`** — `generateReportForUser(userId, options)` is the single entry point for report generation. Loads plugin → computes date range → reads records → calls AI engine → writes `.md` file → writes DB → rolls back `.md` on DB failure. Used by both `/api/generate` and scheduled tasks.
 - **`src/lib/github.ts`** — GitHub API client: OAuth token exchange, user info, repo listing, commit listing. `listCommits()` max 10 pages (1000 commits). 401/403 throw errors rather than silently returning `[]`.
-- **`src/lib/generate.ts`** — report generation entry point. Writes `.md` file first, then DB; rolls back file on DB failure.
 - **`src/lib/scheduler.ts`** — node-cron. `parseSchedule()` converts human-readable strings ("Fri 17:00") to cron. Timezone via `process.env.TZ || "Asia/Shanghai"`.
+- **`src/lib/scheduler-runner.ts`** — bridges DB `ScheduledTask` records to the node-cron `Scheduler`. `startScheduledTask()` / `stopScheduledTask()` / `loadAndStartAllTasks()`.
 - **`src/lib/storage.ts`** — JSONL storage for future plugins. Uses Promise-chain write queue for concurrent-write safety.
 - **`src/lib/templates.ts`** — `fillTemplate()` with `{{PLACEHOLDER}}` substitution. Escapes `{{` in user content.
 - **`src/lib/oauth.ts`** — generic OAuth helpers: `getRequestOrigin()` (x-forwarded detection), `buildAuthorizeUrl()`, `exchangeCodeForToken()`.
+- **`src/lib/oauth-providers.ts`** — `OAUTH_PROVIDERS` registry: GitLab, Jira, Linear, Feishu, Google Calendar, WeCom, Notion, Yuque. Each entry defines endpoints, scopes, env var prefix, and token auth mode (body vs Basic).
+- **`src/lib/schemas.ts`** — Zod validation schemas for all API routes (`LoginSchema`, `RegisterSchema`, `GenerateSchema`, `ScheduleCreateSchema`, etc.) plus `parseBody()` helper. Every POST/PATCH route uses this — returns validated data or a 400 Response.
+- **`src/lib/prisma.ts`** — Prisma client singleton (uses `globalThis` to survive Next.js dev-mode hot reload).
+- **`src/instrumentation.ts`** — Next.js startup hook (Node.js runtime only). Calls `loadAndStartAllTasks()` on server start to resume persisted cron jobs from DB.
 
 ### Database
 
 SQLite via Prisma. Models: `User`, `Config`, `Report`, `DataSource`, `ScheduledTask`.
 
 - `User` — email/password auth with bcrypt hash.
-- `DataSource` — per-user plugin connections. `config` JSON holds encrypted OAuth tokens + repo selection.
+- `DataSource` — per-user plugin connections. `@@unique([userId, name])` composite key. `config` JSON holds encrypted OAuth tokens + repo selection. Plugins load config via `findUnique({ where: { userId_name: { userId, name } } })` — never by `id` alone.
 - `ScheduledTask` — cron tasks with `userId` ownership. Unique on `userId + name`.
 - `Report` — generated reports with `userId`, `type`, `label`, `dateRange`, `content`, stats.
 
@@ -94,9 +109,18 @@ SQLite via Prisma. Models: `User`, `Config`, `Report`, `DataSource`, `ScheduledT
 | `/api/schedule/[id]` | PATCH/DELETE | Bearer | Update/delete. Ownership verified |
 | `/api/oauth/github` | GET | Public | GitHub OAuth initiation |
 | `/api/oauth/callback/github` | GET | Public | GitHub OAuth callback |
-| `/api/oauth/[provider]` | GET | Public | Generic OAuth initiation |
+| `/api/oauth/[provider]` | GET | Public | Generic OAuth initiation (GitLab, Jira, Linear, etc.) |
 | `/api/oauth/callback/[provider]` | GET | Public | Generic OAuth callback |
 | `/api/health` | GET | Public | Returns 200 if DB ok, 503 if not |
+
+### Adding a new API route — checklist
+
+1. Define Zod schema in `src/lib/schemas.ts`
+2. Use `parseBody(schema, body)` — on failure returns a 400 `Response`, so check: `if (parsed instanceof Response) return parsed` (or use `result.success` pattern)
+3. POST/PATCH routes: wrap `req.json()` in try/catch → 400 on malformed JSON
+4. Mutating routes: verify resource ownership (`userId` match) before acting
+5. Add rate limit if user-facing and potentially expensive
+6. Add to middleware's public prefix list only if truly unauthenticated
 
 ### Security patterns
 
